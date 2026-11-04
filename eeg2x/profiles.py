@@ -591,6 +591,14 @@ PROFILES.update({
     if value.task_id == "video_generation"
 })
 
+# 文本任务的 profile 同样单独放在 profiles_text.py；只取 sentence_generation。
+from .profiles_text import PROFILES as _TEXT_PROFILES  # noqa: E402
+
+PROFILES.update({
+    key: value for key, value in _TEXT_PROFILES.items()
+    if value.task_id == "sentence_generation"
+})
+
 
 def get_preprocessing_profile(profile_id):
     try:

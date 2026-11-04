@@ -34,15 +34,12 @@ from eeg2x.rawdata import (
 )
 from eeg2x.evaluation.registry import get_task_config
 from eeg2x.encoders.luna.input import luna_input_state, prepare_luna_epochs
-from eeg2x.preprocessing.common import (
-    TARGET_SR,
-    _apply_whiten,
-    _compute_mnn_whitener,
-    _find_osf_sessions,
-    _find_things_subjects,
-    _load_eeg_and_stim,
-    _load_image_metadata,
-    _thingseeg_image_uri,
+from eeg2x.preprocessing.ops import (
+    TARGET_SR, _apply_whiten, _compute_mnn_whitener,
+)
+from eeg2x.preprocessing.legacy_image import (
+    _find_osf_sessions, _find_things_subjects, _load_eeg_and_stim,
+    _load_image_metadata, _thingseeg_image_uri,
     _write_image_protocol_metadata,
 )
 

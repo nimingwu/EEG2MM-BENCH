@@ -75,7 +75,7 @@ def _candidate_names(model: str, encoder: str | None) -> Tuple[str, ...]:
         return ("image",)
     if model in ("eeg2video", "eeg2video_orig", "eegvid_orig"):
         return ("video",)
-    if model in ("glim", "glim_orig"):
+    if model in ("glim", "glim_orig", "eeg2text_orig", "rag_orig"):
         return ("text",)
     if model in ("enigma", "avde"):
         return ("image",)
@@ -142,7 +142,8 @@ def report() -> Dict[str, object]:
             ("only_clip", None), ("only_clip", "labram"), ("only_clip", "luna"),
             ("eeg2video", None), ("glim", None), ("enigma", None),
             ("avde", None), ("eeg2video_orig", None), ("eegvid_orig", None),
-            ("glim_orig", None), ("eegbench", None)):
+            ("glim_orig", None), ("eeg2text_orig", None), ("rag_orig", None),
+            ("eegbench", None)):
         key = model if encoder is None else f"{model}:{encoder}"
         options = candidates(model, encoder)
         runnable[key] = {

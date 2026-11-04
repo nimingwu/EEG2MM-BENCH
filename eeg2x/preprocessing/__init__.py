@@ -125,20 +125,20 @@ _ADAPTERS: Dict[str, Callable[..., int]] = {
 # 适配表，签名也不同——多收一个 encoder，少收 profile_id 与几何参数。
 
 def _seed_dv(subject, out_dir, encoder, data_root, *, overwrite):
-    from .video import build_branch, process_subject
+    from .seed_dv import build_branch, process_subject
     number = int(str(subject).split("-")[-1])
     return process_subject(Path(data_root), Path(out_dir), number,
                            branches=[build_branch(encoder)])
 
 
 def _ds005662(subject, out_dir, encoder, data_root, *, overwrite):
-    from .video import ds005662_build_branch, ds005662_process_subject
+    from .ds005662 import ds005662_build_branch, ds005662_process_subject
     return ds005662_process_subject(Path(data_root), Path(out_dir), subject,
                                     branches=[ds005662_build_branch(encoder)])
 
 
 def _ds008257(subject, out_dir, encoder, data_root, *, overwrite):
-    from .video import (
+    from .ds008257 import (
         ds008257_build_branch, ds008257_process_subject,
         load_ds008257_captions, load_ds008257_stimuli,
     )
@@ -151,6 +151,71 @@ _VIDEO_ADAPTERS: Dict[str, Callable[..., object]] = {
     "seed_dv": _seed_dv,
     "ds005662": _ds005662,
     "ds008257": _ds008257,
+}
+
+# ---------------------------------------------------------------------------
+# 文本数据集
+# ---------------------------------------------------------------------------
+#
+# 文本预处理是两段的：先把原始数据做成 seed2000_source 下的 dataframe，再由
+# 数据集模块写成每个编码器分支的 HDF5。当前只迁移了第二段；第一段依赖原始
+# .mat/.pkl 与 GLIM 的 STEP3 notebook，暂不在 v3 内重跑。data_root 指向
+# dataframe；为空时用 GLIM 仓库 seed2000_source 下的默认文件。
+
+def _zuco2(subject, out_dir, encoder, data_root, *, overwrite):
+    from eeg2x.paths import V2_TEXT_ROOT
+    from .zuco2 import prepare
+    source = (Path(data_root) if data_root is not None else
+              V2_TEXT_ROOT / "seed2000_source" / "zuco2_eeg_label_8variants.df")
+    if not Path(source).is_file():
+        raise FileNotFoundError(f"missing ZuCo2 source dataframe {source}")
+    return prepare(str(source), str(out_dir), subjects=[subject],
+                   encoders=[encoder])
+
+
+def _chisco(subject, out_dir, encoder, data_root, *, overwrite):
+    from eeg2x.paths import V2_TEXT_ROOT
+    from .chisco import prepare
+    source = (Path(data_root) if data_root is not None else
+              V2_TEXT_ROOT / "seed2000_source" / "chisco_eeg_500hz_imagine.df")
+    variants = V2_TEXT_ROOT.parent / "chisco_variants" / "chisco_label_8variants.df"
+    if not Path(source).is_file():
+        raise FileNotFoundError(f"missing Chisco source dataframe {source}")
+    return prepare(str(source), str(out_dir), [encoder],
+                   str(variants) if variants.is_file() else None,
+                   subjects=[subject])
+
+
+def _zuco1(subject, out_dir, encoder, data_root, *, overwrite):
+    from eeg2x.paths import V2_TEXT_ROOT
+    from .zuco1 import prepare
+    source = (Path(data_root) if data_root is not None else
+              V2_TEXT_ROOT.parent / "EEG2X-Benchmark-v2" / "seed2000_source"
+              / "zuco1_eeg_label_8variants.df")
+    if not Path(source).is_file():
+        raise FileNotFoundError(f"missing ZuCo1 source dataframe {source}")
+    return prepare(str(source), str(out_dir), subjects=[subject],
+                   encoders=[encoder])
+
+
+def _tmnred(subject, out_dir, encoder, data_root, *, overwrite):
+    from eeg2x.paths import V2_TEXT_ROOT
+    from .tmnred import prepare
+    source = (Path(data_root) if data_root is not None else
+              V2_TEXT_ROOT / "seed2000_source" / "tmnred_eeg_200hz.df")
+    variants = V2_TEXT_ROOT.parent / "tmnred_variants" / "tmnred_label_8variants.df"
+    if not Path(source).is_file():
+        raise FileNotFoundError(f"missing TMNRED source dataframe {source}")
+    return prepare(str(source), str(out_dir), [encoder],
+                   str(variants) if variants.is_file() else None,
+                   subjects=[subject], keep_full_split=True)
+
+
+_TEXT_ADAPTERS: Dict[str, Callable[..., object]] = {
+    "zuco1": _zuco1,
+    "zuco2": _zuco2,
+    "chisco": _chisco,
+    "tmnred": _tmnred,
 }
 
 
@@ -173,6 +238,12 @@ def preprocess(dataset: DatasetSpec, encoder: str, subject: str, *,
                  subject, profile_id)
         return _VIDEO_ADAPTERS[dataset.name](
             subject, target, encoder, root, overwrite=overwrite)
+
+    if dataset.name in _TEXT_ADAPTERS:
+        log.info("%s/%s/%s: profile=%s (text branch)", dataset.name, encoder,
+                 subject, profile_id)
+        return _TEXT_ADAPTERS[dataset.name](
+            subject, target, encoder, data_root, overwrite=overwrite)
 
     if dataset.name not in _ADAPTERS:
         raise KeyError(

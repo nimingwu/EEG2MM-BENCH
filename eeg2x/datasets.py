@@ -175,10 +175,41 @@ CHISCO = DatasetSpec(
     task="sentence_generation",
 )
 
+#: ZuCo 1：12 名被试，三字母被试编码。
+ZUCO1 = DatasetSpec(
+    name="zuco1",
+    subjects=("ZAB", "ZDM", "ZDN", "ZGW", "ZJM", "ZJN", "ZJS", "ZKB", "ZKH",
+              "ZKW", "ZMG", "ZPH"),
+    profiles={
+        "glim": "zuco1-glim-raw-v1",
+        "labram": "zuco1-labram-raw-v1",
+        "luna": "zuco1-luna-raw-v1",
+        "reve": "zuco1-reve-raw-v1",
+    },
+    root="/datas/eeg_benchmark_project/zuco_1",
+    convention_subject="ZAB",
+    task="sentence_generation",
+)
+
+#: TMNRED（ds005383）：30 名被试，30 个真实 EEG 通道。
+TMNRED = DatasetSpec(
+    name="tmnred",
+    subjects=_subs(1, 30),
+    profiles={
+        "glim": "tmnred-glim-raw-v1",
+        "labram": "tmnred-labram-raw-v1",
+        "luna": "tmnred-luna-raw-v1",
+        "reve": "tmnred-reve-raw-v1",
+    },
+    root="/datas/eeg_benchmark_project/openneurodownload/ds005383-download",
+    convention_subject="sub-01",
+    task="sentence_generation",
+)
+
 DATASETS: dict[str, DatasetSpec] = {
     spec.name: spec
     for spec in (THINGSEEG, NOD, GROOTSWAGERS, GROOTSWAGERS2025,
-                 SEED_DV, SMIT2025, EMD, ZUCO2, CHISCO)
+                 SEED_DV, SMIT2025, EMD, ZUCO1, ZUCO2, CHISCO, TMNRED)
 }
 
 

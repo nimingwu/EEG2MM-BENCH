@@ -9,7 +9,7 @@ description = "EEG2MM-BENCH: unified EEG-to-image/video/text benchmark with swap
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
-authors = [{ name = "EEG2X-Benchmark contributors" }]
+authors = [{ name = "EEG2MM-BENCH contributors" }]
 keywords = ["EEG", "benchmark", "image-reconstruction", "clip", "neuroscience"]
 
 classifiers = [
@@ -51,7 +51,7 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/example/eeg2x-benchmark"
+Homepage = "https://github.com/nimingwu/EEG2MM-BENCH"
 
 [project.scripts]
 eeg2x = "eeg2x.cli:main"
@@ -66,6 +66,7 @@ include = ["eeg2x*"]
 
 [tool.setuptools.package-data]
 "eeg2x.encoders" = ["channel_mappings/*.json"]
+"eeg2x.preprocessing" = ["resources/*.json"]
 
 [tool.setuptools.exclude-package-data]
 "eeg2x.baselines.avde" = ["pretrained/*"]

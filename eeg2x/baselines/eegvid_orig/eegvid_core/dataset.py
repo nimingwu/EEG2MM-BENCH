@@ -45,7 +45,7 @@ import sys
 
 # The manifest's cutting rule is the loader's, and it is reused rather than
 # re-derived -- see ``stimulus_frame_indices``.
-from eeg2x.preprocessing.video import stimulus_frame_indices
+from eeg2x.preprocessing.ds005662 import stimulus_frame_indices
 
 LOG = logging.getLogger("eeg2video_eegvid.dataset")
 

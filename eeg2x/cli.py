@@ -47,12 +47,13 @@ VIDEO_ENCODERS = ("eegnet", "labram", "reve", "luna", "eegvid_nice")
 TEXT_ENCODERS = ("glim", "labram", "luna", "reve")
 #: baseline（编码器固定）。
 BASELINES = ("atm_full", "avde", "enigma", "dummy",
-             "eeg2video_orig", "eegvid_orig", "glim_orig")
+             "eeg2video_orig", "eegvid_orig", "glim_orig",
+             "eeg2text_orig", "rag_orig")
 #: 本里程碑已经能跑的模型。
 IMPLEMENTED = ("only_clip", "eeg2video", "glim")
 #: 已经搬过来的 baseline。
 IMPLEMENTED_BASELINES = ("enigma", "avde", "eeg2video_orig", "eegvid_orig",
-                         "glim_orig")
+                         "glim_orig", "eeg2text_orig", "rag_orig")
 #: 评测的 8 个指标（方向见下）。
 IMAGE_METRICS = ("clip_similarity", "pixcorr", "ssim", "alexnet_2",
                  "alexnet_5", "inception", "swav", "fid")
@@ -200,15 +201,29 @@ def _run_baseline(args: argparse.Namespace, dataset: DatasetSpec,
             raise SystemExit(
                 f"error: glim_orig only applies to text datasets; "
                 f"{dataset.name!r} is {dataset.task!r}")
-        from .frameworks.glim.pipeline import resolve_paths, run_inference
+        from .baselines.glim_orig.runner import run_inference as glim_orig_inference
+        log.info("===== %s / glim_orig =====", dataset.name)
         try:
-            paths = resolve_paths(dataset, "glim_orig")
+            return glim_orig_inference(
+                dataset, device=args.device, noise=args.noise,
+                noise_seed=args.noise_seed, overwrite=args.overwrite)
         except KeyError as exc:
             raise SystemExit(f"error: {exc}") from exc
-        log.info("===== %s / glim_orig =====", dataset.name)
-        return run_inference(paths, device=args.device, noise=args.noise,
-                             noise_seed=args.noise_seed,
-                             overwrite=args.overwrite)
+    if args.model in ("eeg2text_orig", "rag_orig"):
+        if dataset.task != "sentence_generation":
+            raise SystemExit(
+                f"error: {args.model} only applies to text datasets; "
+                f"{dataset.name!r} is {dataset.task!r}")
+        if args.model == "eeg2text_orig":
+            from .baselines.eeg2text_orig.runner import run_inference as fn
+        else:
+            from .baselines.rag_orig.runner import run_inference as fn
+        log.info("===== %s / %s =====", dataset.name, args.model)
+        try:
+            return fn(dataset, device=args.device, noise=args.noise,
+                      noise_seed=args.noise_seed, overwrite=args.overwrite)
+        except KeyError as exc:
+            raise SystemExit(f"error: {exc}") from exc
     if args.model == "eegvid_orig":
         if dataset.task != "video_generation":
             raise SystemExit(
@@ -378,12 +393,12 @@ def _preprocess(args: argparse.Namespace) -> int:
     subjects = _subjects_for(dataset, args.subjects)
     # 视频 loader 自己写 <out_dir>/<encoder>/，所以传数据集根，不传编码器目录；
     # 图像分支则是 <encoder>/<subject>。
+    batch_task = dataset.task in ("video_generation", "sentence_generation")
     out_root = (V3_ROOT / "h5" / dataset.name
-                if dataset.task == "video_generation"
-                else V3_ROOT / "h5" / dataset.name / encoder)
+                if batch_task else V3_ROOT / "h5" / dataset.name / encoder)
     for subject in subjects:
         log.info("===== preprocess %s / %s / %s =====", dataset.name, encoder, subject)
-        target = out_root if dataset.task == "video_generation" else out_root / subject
+        target = out_root if batch_task else out_root / subject
         preprocess(dataset, encoder, subject,
                    out_dir=target,
                    data_root=args.data_root,
