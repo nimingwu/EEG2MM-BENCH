@@ -1,0 +1,41 @@
+EEG2X-Benchmark v3 介绍
+
+一、为什么要重构
+
+v2 已经把实验跑通，但结构在推进过程中逐渐失控。最直接的问题是运行脚本重复：根目录有 32 个 Python 文件，其中 15 个是 run_*.py，而 run_only_clip_linear_seed2000.py、run_rsvp_atm_seed2000.py、run_nod_atm_linear_seed2000.py 等 7 个文件各自完整复制了同一条 Only-CLIP 链路，也就是训练编码器、提取嵌入、训练线性投影、生成图像、评测这五步，重复的编排代码约五百行。更麻烦的是评测函数 evaluate_predictions 住在 run_atm_benchmark.py 里，导致另外十六个模块都要反过来 import 一个 runner。run_atm_luna_benchmark.py 与 run_atm_reve_benchmark.py 有八成七的相似度，本质上是一个文件被拆成两个。
+
+第二个问题是框架与编码器的耦合。统一框架的不变量是只替换编码器，但这条不变量靠约定维持而不靠结构。换编码器要同时改 runner 里的 ENCODER_SPECS、h5_dir、encoder_config 和文件名前缀。model/atm/model.py 里的 ATMS 还针对 encoder=="atm_s" 留了硬编码分支，与走 ENCODER_REGISTRY 的编码器分成两条路径，连 forward 的签名都不同。
+
+第三个问题是预处理散落。eeg2image_benchmark_loader.py 这个 1091 行的单体 loader 之外，又出现了 preprocess_atm_thingseeg.py、preprocess_grootswagers.py、preprocess_grootswagers2025.py、preprocess_nod_atm.py 四个脚本，它们互相 import 下划线开头的私有函数，MNN 白化、编码器适配、HDF5 写入各写了一遍。第四个问题是刺激侧没有抽象，图像如何变成回归目标这件事藏在 model/atm/features.py 里，位置与命名都不体现它是一等概念。
+
+二、重构了什么
+
+框架只写一遍，编码器可插拔。v3 把所有编码器统一到 eeg2x/encoders/base.py 定义的协议下，框架代码不认识任何具体编码器名字，换编码器只改一个参数。五个编码器只实现一次并跨任务共享，base.py 里预留了 forward_tokens 供视频与文本任务使用。基线相反，编码器固定，传编码器参数直接报错，由 cli.py 强制而非靠约定。
+
+LUNA 的特殊学习率被数据化。v2 里这个例外写成 model/atm/training.py 训练循环中的一个 if，v3 改成 eeg2x/encoders/base.py 里 OptimizerSpec 字段，由 eeg2x/encoders/luna/__init__.py 声明，没有声明的编码器使用框架默认配方。例外的适用范围也写进了契约：EncoderSpec 的 optimizer_datasets 记录它只在 ThingsEEG 上生效，Grootswager2019 与 NOD 上 LUNA 和其他编码器一样用统一配方。这一点有实验依据，Grootswager2019 上重跑新配方反而更差，已回退，原因与数据量有关，详见实验报告12 第九节。十五个 run_*.py 收敛为 benchmark.py，下设 run、preprocess、verify、list 四个子命令。预处理改为 eeg2x/preprocessing/ 下一数据集一文件。刺激侧提升为 eeg2x/targets/。
+
+三、目录结构
+
+根目录只有 benchmark.py。其余代码全部在 eeg2x/ 包内。包根层有 protocol.py、h5_schema.py、h5_protocol.py、profiles.py、paths.py、rawdata.py、data.py、checkpoints.py、datasets.py、noise_control.py、cli.py 与 __main__.py，另有 encoders/、frameworks/、baselines/、preprocessing/、targets/、tasks/、metrics/、evaluation/ 八个子目录。文档在 docs/，环境记录在 requirements-v3.txt，打包配置在 pyproject.toml。
+
+四、各模块说明
+
+eeg2x/ 根层的十一个模块按职责分成四组。第一组是数据契约，包括 protocol.py、h5_schema.py、h5_protocol.py 与 profiles.py。protocol.py 是契约基础，对应 v2 的 core/data_protocol.py，定义三个数据类：ProcessingStep 描述一个预处理步骤的名称、参数与拟合范围，拟合范围分 none、train、source 三档；PreprocessingProfile 由一组 ProcessingStep 构成并通过对规范化 JSON 求 SHA-256 得到 fingerprint；StimulusRecord 描述一条刺激记录的编号、模态、路径、哈希与呈现时刻。它还提供 canonical_json、make_stimulus_id、sha256_file、sha256_array、normalize_channel_names、expected_resampled_length、resample_eeg、seconds_to_sample、write_common_h5_metadata 与 write_stimulus_manifest 等函数。h5_schema.py 提供 validate_h5_file 与 require_valid_h5_file，做字段级的 HDF5 校验。h5_protocol.py 提供 validate_protocol_v2，在字段校验之上检查预处理指纹与状态指纹、禁止测试集使用由数据源拟合的步骤、核对 MNN 矩阵哈希，从而证明产物确实按声明流程生成。profiles.py 对应 v2 的 core/preprocessing_profiles.py，用内部函数 _p 构造六十多个 PreprocessingProfile，并提供 get_preprocessing_profile 按编号查询。
+
+第二组是路径与数据访问，包括 paths.py、rawdata.py、data.py、checkpoints.py 与 datasets.py。paths.py 是 v3 新写的，作用是屏蔽 v2 产物命名的四种形态，提供 subject_tag、h5_dir、artifact_dir 与 require_v3_output 四个函数，其中 artifact_dir 在基线传入 encoder 时直接抛错，这是基线不可换编码器的强制点之一。rawdata.py 对应 v2 的 core/paths.py，保存 EXPECTED_NOD_ROOT 等原始数据根常量，并提供 require_thingseeg_link、require_benchmark_output 以及一组 require_raw_* 守卫函数；其中 require_benchmark_output 在 v3 里把允许的根从 v2 的一个扩展为 v2 与 v3 两个，因为迁移阶段需要读 v2 的产物。data.py 从 v2 的 model/atm/data.py 提到了根层，因为框架与三个基线都要用它，它提供 subject_number、sample_id_for_h5_row、h5_fingerprint、validate_atm_h5、discover_subject_h5、iter_stimulus_rows、unique_stimuli、artifact_manifest、write_json，以及 StimulusRow、FeatureStore、ATMH5Dataset 三个类。checkpoints.py 是 v3 新写的，解决 v2 的 load_state_checkpoint 带只读目录守卫而无法读取 v2 自身产物的问题，提供 allowed_roots 与放宽后的 load_state_checkpoint。datasets.py 是数据集注册表，核心数据结构 DatasetSpec 记录数据集名、被试列表、编码器到 profile 编号的映射、原始数据根与惯例被试，DATASETS 登记四个数据集，resolve 按名字查询，四个数据集分别十、十九、十六、四十二名被试，NOD 是十九名而非二十名。
+
+第三组是横切工具，包括 noise_control.py。它是从 v2 的 model/noise_control.py 迁移的共享实现，为噪声对照实验提供参数定义、噪声抽样、路径推导、条件元数据与产物校验。v3 已经把它接到三个注入点上：框架侧是 frameworks/only_clip/embed.py，五个可插拔编码器共用这一处，LUNA 的结构性零填充按 valid_samples 只替换信号段；ENIGMA 是 baselines/enigma/pipeline.py 的 _predict_embeddings；AVDE 是 baselines/avde/inference.py 的 generate_stage。命令行入口是 run 子命令的 --noise gaussian 与 --noise-seed，另有 --distinct-images 作为噪声条件的省时档，干净条件禁止使用。噪声产物一律落在干净根目录下的 noise_control 子目录，并写旁挂的 noise_meta.json。
+
+第四组是入口，包括 cli.py 与 __main__.py。cli.py 定义框架名单与基线名单，_validate_seed 强制全局种子为 2000 并要求 PYTHONHASHSEED 也是 2000，_require_encoder 解析编码器名并对基线传入编码器的情况直接报错退出，_subjects_for 解析被试参数且默认为全部被试，_run 跑框架链路，_run_baseline 跑基线，_preprocess 跑预处理，_verify 跑一遍再与 v2 的评测结果逐指标对比，_list 列出可用组合，add_noise_arguments 给推理入口加噪声开关，build_parser 与 main 是命令行结构与总入口。__main__.py 让 python -m eeg2x 可用。benchmark.py 是根目录唯一的脚本，只把参数转交给 cli.py。
+
+encoders/ 存放编码器。base.py 定义 OptimizerSpec、EncoderSpec 与 EEGEncoder 三个成员：OptimizerSpec 记录峰值学习率、最低学习率、预热轮数、权重衰减与逐层衰减；EncoderSpec 记录名字、构造函数、特征维度、优化器声明、依赖包、是否需要通道名与是否复用别人的 HDF5，并带 require_packages 方法在缺依赖时报出明确错误；EEGEncoder 要求实现 feature_dim、forward、forward_tokens 与 pretrained_metadata。atm_s.py、labram.py、reve.py、enigma.py 各含一个编码器，模型数学逐字复制自 v2。luna/ 是子包，encoder.py 是适配层，official.py 是从 BioFoundation 复制的骨干，input.py 是 LUNA 特有的输入适配，__init__.py 声明了 LUNA 自己的 OptimizerSpec。__init__.py 里的 ENCODERS 是名字到 EncoderSpec 的字典，ALIASES 把 atm 映射到 atm_s、把 enigma 映射到 enigma_cnn，resolve 与 build 负责查询与构造。
+
+frameworks/only_clip/ 是唯一实现一遍的框架。model.py 定义 ResidualAdd、ATMProjector、ClipLoss、generation_alignment_loss、retrieval_alignment_loss 与核心类 OnlyClipModel，后者把任意满足协议的编码器接到投影头再映射到 1024 维 CLIP 空间。checkpoint.py 用 _migrate_atm_s_keys 处理键名迁移，用 build_model_from_config 与 load_only_clip_checkpoint 从 v2 权重重建模型。embed.py 的 embed_split 写出脑电嵌入，同时是噪声对照在框架侧的注入点，projection.py 的 EEGToImageProjection 是替换扩散先验的单层线性层，inference.py 提供 generate_projected_embeddings 与 generate_stage，sdxl.py 是 SDXL-Turbo 生成管线，pipeline.py 用 STAGES 阶段表把六步串起来并用 RunPaths 描述输入输出；train 阶段由 train.py 实现，负责训练编码器加 ATM 头、在训练集上计算嵌入、再训练替换扩散先验的线性投影头，已有检查点时默认跳过，加 --overwrite 才重训。完整跑完推理后 pipeline.py 写出 run_config.json，记录任务契约、指标方向、EEG 几何、噪声条件与训练配方。train.py 里的优化器按 EncoderSpec 声明的配方构造，未声明或不适用的数据集用 AdamW 平坦 3e-4。low_level.py、semantic.py、modeling_git.py 与 sdxl_low_level.py 是完整 ATM 基线需要的低层与语义分支。
+
+preprocessing/ 是本次重构的重点。__init__.py 维护 GEOMETRY 表，按 profile 编号给出目标采样率、输出样本数、是否做 LUNA 适配与输出文件名前缀，再用 _ADAPTERS 按数据集分派。四个脚本的参数签名互不相同，分派层没有用通配参数吞掉差异，而是让每个适配函数显式写出传给下游的字段，否则 LUNA 开关被悄悄丢掉时会生成几何错误的文件而不报错。thingseeg.py 含 _select_atm_channels、_remove_marker_events、_build_events、select_paper_repetitions、epoch_baseline_resample_crop、_write_atm_h5、_write_concept_average 与最外层的 preprocess_subject；nod.py、grootswagers.py、grootswagers2025.py 结构类似；common.py 是从 v2 的 loader 降级而来的辅助函数库。
+
+targets/clip.py 负责把刺激图像过一遍 CLIP ViT-H/14 写成特征库，按刺激标识索引并记录原始图像哈希。tasks/ 下 image.py、text.py、speech.py 是任务契约，image.py 定义 Subtask、TaskSpec、EegSpec、StimulusSpec、SubjectMeta、Sample、RetrievalOutput、GenerationOutput、ClassificationOutput 与 validate_output。v3 把图像任务这份契约接进了运行时：EegSpec.from_h5 从产物 HDF5 读出真实的采样率、通道表、时间窗与预处理步骤，eeg_spec_from_h5_files 把一个评测目录的文件归约成同一份并校验几何一致；evaluate_predictions 把结果写进报告的 task_contract 字段，框架的 run_config.json 记录同一份契约。图像生成任务的八项指标只在 TASK_REGISTRY 里定义一次，evaluation/registry.py 引用它，不再两处各写一份。text.py 与 speech.py 仍未接线。metrics/ 是 v2 指标实现的整体迁移，十六个模块，图像八项指标是 clip_similarity、pixcorr、ssim、alexnet_2、alexnet_5、inception、swav、fid。
+
+evaluation/ 是评测层。evaluator.py 从 v2 的 benchmark_eval.py 迁移而来，负责发现 HDF5 文件、抽取真值、按指标名计算并生成报告，对应 discover_h5_files、extract_ground_truths、generate_report、print_report。registry.py 从 v2 的 core/registry.py 迁移而来，用 get_task_config 与 list_tasks 描述每个任务需要哪些 HDF5 文件、默认指标与 schema。api.py 是评测入口 evaluate_predictions，它在 v2 里住在 run_atm_benchmark.py 内部被十六个模块反向依赖，v3 把它提成了独立一层，逻辑逐条不变。
+
+baselines/ 下 ENIGMA 与 AVDE 已经移植并跑通，ENIGMA 的 runner.py 与 AVDE 的 runner.py 负责把 v2 训练好的 checkpoint 放进 v3 输出目录再以不覆盖的方式调用，从而跳过训练；完整 ATM 的代码已在 baselines/atm_full/ 中，含 model.py 这个兼容垫片，但原实现是纯训练流程，还缺只推理入口。

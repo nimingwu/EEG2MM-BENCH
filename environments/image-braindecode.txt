@@ -1,0 +1,4 @@
+# 在 image.txt 之上加 LaBraM。
+# braindecode 必须固定 1.3.2：1.6 及以上的 Labram 架构不同，无法加载 v2 的 checkpoint。
+-r image.txt
+braindecode==1.3.2

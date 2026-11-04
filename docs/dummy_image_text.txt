@@ -1,0 +1,26 @@
+EEG2X-Benchmark Dummy 实验结果（EEG-to-Image、EEG-to-Text 与 EEG-to-Video）
+
+说明：图像数值取自 EEG2X-Benchmark-v2-test/artifacts/dummy_*/evaluation/generation_dummy.json，文本数值取自 EEG2X-Benchmark-v2-GS/outputs/*_dummy_seed2000/evaluation/report_semkey.json，视频数值取自 fuxian-eeg2video-1/实验报告10.txt 的第十二节（训练集逐帧均值 dummy）。指标顺序与 tab_raw_data.tex 的图像表、文本表、视频表一致，数值保留 4 位小数。文本的 BLEU-1 与 BLEU-2 采用 MTV 协议。图像表的 FID、文本表的 length MAE 与 SBERT cosine 不在 tab_raw_data.tex 的列中，因此这里不列出。ZuCo 2 的 dummy 产物只有 12 个被试的版本。
+
+一、EEG-to-Image
+
+数据集                    PixCorr        SSIM  AlexNet(2)  AlexNet(5)   Inception        CLIP        SwAV
+Things EEG              0.1065      0.3845      0.5000      0.5000      0.5000      0.5000      0.6480
+NOD-EEG                 0.0537      0.3484      0.5000      0.5000      0.5000      0.5000      0.6626
+Grootswager2019         0.4923      0.1456      0.5000      0.5000      0.5000      0.5000      0.6666
+Grootswagers2025        0.4673      0.1429      0.5000      0.5000      0.5000      0.5000      0.6795
+
+二、EEG-to-Text
+
+数据集             BLEU-1    BLEU-2     2-WAY     4-WAY    10-WAY    24-WAY  C.RECALL    DIST-1    DIST-2     H.ENT        FD
+ZuCo 1          0.1025    0.0221    0.5000    0.2500    0.1000    0.0417    0.0133    0.0007    0.0008   -0.0000    1.6433
+ZuCo 2          0.2010    0.0699    0.5000    0.2500    0.1000    0.0417    0.0015    0.0013    0.0013   -0.0000    1.5402
+chisco          0.1067    0.0122    0.5000    0.2500    0.1000    0.0417    0.0000    0.0008    0.0000    0.0000    0.5941
+tmnred          0.0985    0.0344    0.5000    0.2500    0.1000    0.0417    0.0000    0.0020    0.0000    0.0000    0.7078
+
+三、EEG-to-Video
+
+数据集        Video-2-way  Video-40-way  Frame-2-way  Frame-40-way        SSIM        PSNR     Hue-pcc
+SEED-DV            0.7706        0.1255       0.6822        0.0324      0.4200     11.3720      0.8227
+Smit2025           0.9780        0.7200       0.9882        0.7863      0.7680     17.2023      0.6990
+EMD                0.7319        0.0677       0.7697        0.1111      0.2649      7.5538      0.6888

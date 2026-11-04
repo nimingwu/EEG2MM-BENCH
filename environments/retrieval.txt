@@ -1,0 +1,22 @@
+# EEGBench 检索（NeuralBench 栈）
+# 需要 Python 3.12。上游固定到 neuroai 的 pinned commit：
+#   neuralset / neuralfetch / neuraltrain / neuralbench
+# 当前本机没有可用的环境；/EEG_bench_open 的 vendor 目录只剩 neuralbench，
+# neuraltrain / neuralset / neuralfetch 的源码已被清理。
+torch>=2.5.1
+lightning>=2.0.8
+transformers==4.57.6
+huggingface_hub>=0.27
+safetensors
+h5py
+PyYAML
+scikit-learn
+mne>=1.10.2
+pandas
+moviepy>=2.1.2,<3
+imageio-ffmpeg
+julius>=0.2.7
+numba>=0.64
+soundfile
+Pillow
+# NeuralBench 四个包从 neuroai 仓库以 editable 方式安装

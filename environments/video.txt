@@ -1,0 +1,14 @@
+# EEG-to-Video 框架与 EEGVid / EEG2Video Orig
+# 已知可用的解释器：/datas/linshishangchuan/eeg2video（Python 3.10）
+torch==2.1.2
+diffusers==0.11.1
+transformers==4.30.2
+torch-geometric==2.8.0
+rotary-embedding-torch==0.9.1
+mne==1.6.1
+h5py
+scikit-learn
+opencv-python
+pandas
+einops
+Pillow

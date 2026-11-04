@@ -1,0 +1,378 @@
+{
+  "dataset_id": "eeg_video_action",
+  "eeg_root": "/datas/eeg_benchmark_project/EEG-Video-Action/SingleShot/SingleShot",
+  "source": {
+    "alignment_source": "zenodo_segment_table",
+    "doi": "10.5281/zenodo.10512414",
+    "note": "start_sec/end_sec are the record's own timestamps in each YouTube source video. The videos are not redistributed by the record; the local .mp4 files are those sources, and the played clip is [start_sec, end_sec] within them.",
+    "paper": "Yao, Stebner, Tuytelaars, Geirnaert & Bertrand, 'Identifying temporal correlations between natural single-shot videos and EEG signals', J. Neural Eng. 21 (2024) 016018, doi:10.1088/1741-2552/ad2333",
+    "record": "https://zenodo.org/api/records/10512414"
+  },
+  "video_root": "/datas/eeg_benchmark_project/EEG-Video-Action/video/video",
+  "videos": {
+    "01_Dance_1": {
+      "clip_seconds": 222.66,
+      "duration_sec": 240.0,
+      "eeg_seconds": {
+        "max": 222.6372,
+        "min": 222.5698,
+        "n_subjects": 19
+      },
+      "end_sec": 231.2,
+      "file": "01_Dance_1.mp4",
+      "fps": 24.0,
+      "height": 720,
+      "max_delta_sec": 0.0902,
+      "n_frames": 5760,
+      "session": "01",
+      "sha256": "4143e4c1aa5323a9c544594dca5a00f2c5d40fd679aa9b00a0f213fa295c4314",
+      "source_bdf": "P1",
+      "source_bdfs_seen": [
+        "P1",
+        "Part1",
+        "p1",
+        "part1"
+      ],
+      "start_sec": 8.54,
+      "truncate_to": "eeg",
+      "width": 1280,
+      "youtube": "https://youtu.be/uOUVE5rGmhM"
+    },
+    "03_Acrob_1": {
+      "clip_seconds": 227.67,
+      "duration_sec": 239.88,
+      "eeg_seconds": {
+        "max": 227.6865,
+        "min": 227.6362,
+        "n_subjects": 19
+      },
+      "end_sec": 231.91,
+      "file": "03_Acrob_1.mp4",
+      "fps": 25.0,
+      "height": 720,
+      "max_delta_sec": 0.0338,
+      "n_frames": 5997,
+      "session": "03",
+      "sha256": "6770c8a43e4b0189daf72dfe1ac0efbd794df96a90f2dc33329a8c5262c51d56",
+      "source_bdf": "P1",
+      "source_bdfs_seen": [
+        "P1",
+        "Part1",
+        "p1",
+        "part1"
+      ],
+      "start_sec": 4.24,
+      "truncate_to": "eeg",
+      "width": 1280,
+      "youtube": "https://youtu.be/DjihbYg6F2Y"
+    },
+    "04_Magic_1": {
+      "clip_seconds": 344.49,
+      "duration_sec": 391.2246,
+      "eeg_seconds": {
+        "max": 344.438,
+        "min": 344.4048,
+        "n_subjects": 19
+      },
+      "end_sec": 348.17,
+      "file": "04_Magic_1.mp4",
+      "fps": 29.97,
+      "height": 720,
+      "max_delta_sec": 0.0852,
+      "n_frames": 11725,
+      "session": "04",
+      "sha256": "00e2de9e1255fbb88adcc46761f354a1ec6d65ea5df47c30a646e8afcdba5d5e",
+      "source_bdf": "P1",
+      "source_bdfs_seen": [
+        "P1",
+        "Part1",
+        "p1",
+        "part1"
+      ],
+      "start_sec": 3.68,
+      "truncate_to": "eeg",
+      "width": 1280,
+      "youtube": "https://youtu.be/CvzMqIQLiXE"
+    },
+    "05_Dance_2": {
+      "clip_seconds": 222.94,
+      "duration_sec": 259.72,
+      "eeg_seconds": {
+        "max": 222.9399,
+        "min": 222.9033,
+        "n_subjects": 19
+      },
+      "end_sec": 227.99,
+      "file": "05_Dance_2.mp4",
+      "fps": 25.0,
+      "height": 720,
+      "max_delta_sec": 0.0367,
+      "n_frames": 6493,
+      "session": "05",
+      "sha256": "b091279b6879ded98bbfe22eefe597648895be7b28a069a32475b4eb5a770608",
+      "source_bdf": "P1",
+      "source_bdfs_seen": [
+        "P1",
+        "Part1",
+        "p1",
+        "part1"
+      ],
+      "start_sec": 5.05,
+      "truncate_to": "eeg",
+      "width": 1280,
+      "youtube": "https://youtu.be/f4DZp0OEkK4"
+    },
+    "06_Mime_2": {
+      "clip_seconds": 341.26,
+      "duration_sec": 622.12,
+      "eeg_seconds": {
+        "max": 341.2388,
+        "min": 341.189,
+        "n_subjects": 19
+      },
+      "end_sec": 347.05,
+      "file": "06_Mime_2.mp4",
+      "fps": 25.0,
+      "height": 480,
+      "max_delta_sec": 0.071,
+      "n_frames": 15553,
+      "session": "06",
+      "sha256": "49b7a282b6a5cb4fdd99c2802c41a71a4ed681a3316078dc837f493397542448",
+      "source_bdf": "P1",
+      "source_bdfs_seen": [
+        "P1",
+        "Part1",
+        "p1",
+        "part1"
+      ],
+      "start_sec": 5.79,
+      "truncate_to": "eeg",
+      "width": 854,
+      "youtube": "https://youtu.be/u9wJUTnBdrs"
+    },
+    "07_Acrob_2": {
+      "clip_seconds": 335.66,
+      "duration_sec": 557.3234,
+      "eeg_seconds": {
+        "max": 335.5889,
+        "min": 335.5381,
+        "n_subjects": 19
+      },
+      "end_sec": 519.27,
+      "file": "07_Acrob_2.mp4",
+      "fps": 29.97003,
+      "height": 720,
+      "max_delta_sec": 0.1219,
+      "n_frames": 16703,
+      "session": "07",
+      "sha256": "c21cfec0720d534d00e1af2ab40f13f813b0eda58f819697df9528c45ae4a048",
+      "source_bdf": "P1",
+      "source_bdfs_seen": [
+        "P1",
+        "Part1",
+        "p1",
+        "part1"
+      ],
+      "start_sec": 183.61,
+      "truncate_to": "eeg",
+      "width": 1280,
+      "youtube": "https://youtu.be/kRqdxGPLajs"
+    },
+    "08_Magic_2": {
+      "clip_seconds": 267.26,
+      "duration_sec": 272.52,
+      "eeg_seconds": {
+        "max": 267.2046,
+        "min": 267.1714,
+        "n_subjects": 19
+      },
+      "end_sec": 270.62,
+      "file": "08_Magic_2.mp4",
+      "fps": 25.0,
+      "height": 480,
+      "max_delta_sec": 0.0886,
+      "n_frames": 6813,
+      "session": "08",
+      "sha256": "183447aed35717bdccab253bf8e8c3253fd7469b9678e849b75fc68543462f3e",
+      "source_bdf": "P2",
+      "source_bdfs_seen": [
+        "P2",
+        "Part2",
+        "p2",
+        "part2"
+      ],
+      "start_sec": 3.36,
+      "truncate_to": "eeg",
+      "width": 600,
+      "youtube": "https://youtu.be/FUv-Q6EgEFI"
+    },
+    "09_Dance_3": {
+      "clip_seconds": 288.56,
+      "duration_sec": 326.9933,
+      "eeg_seconds": {
+        "max": 288.5547,
+        "min": 288.5039,
+        "n_subjects": 19
+      },
+      "end_sec": 294.17,
+      "file": "09_dance_3.mp4",
+      "fps": 29.97003,
+      "height": 360,
+      "max_delta_sec": 0.0561,
+      "n_frames": 9800,
+      "session": "09",
+      "sha256": "f1503b8fa4acd6213d2f109dc9a7f53e0c0869b754b939cc736812c6f5c01089",
+      "source_bdf": "P2",
+      "source_bdfs_seen": [
+        "P2",
+        "Part2",
+        "p2",
+        "part2"
+      ],
+      "start_sec": 5.61,
+      "truncate_to": "eeg",
+      "width": 640,
+      "youtube": "https://youtu.be/LXO-jKksQkM"
+    },
+    "12_Magic_3": {
+      "clip_seconds": 424.6,
+      "duration_sec": 426.48,
+      "eeg_seconds": {
+        "max": 424.5571,
+        "min": 424.5215,
+        "n_subjects": 19
+      },
+      "end_sec": 426.36,
+      "file": "12_magic_3.mp4",
+      "fps": 25.0,
+      "height": 360,
+      "max_delta_sec": 0.0785,
+      "n_frames": 10662,
+      "session": "12",
+      "sha256": "77785b1a72c406a3ca352cc28a7140f506c87fa18a69ef3c4c5fd228b31af238",
+      "source_bdf": "P2",
+      "source_bdfs_seen": [
+        "P2",
+        "Part2",
+        "p2",
+        "part2"
+      ],
+      "start_sec": 1.76,
+      "truncate_to": "eeg",
+      "width": 450,
+      "youtube": "https://youtu.be/S84AoWdTq3E"
+    },
+    "13_Dance_4": {
+      "clip_seconds": 202.9,
+      "duration_sec": 237.1035,
+      "eeg_seconds": {
+        "max": 202.8394,
+        "min": 202.8032,
+        "n_subjects": 19
+      },
+      "end_sec": 217.18,
+      "file": "13_Dance_4.mp4",
+      "fps": 29.97003,
+      "height": 720,
+      "max_delta_sec": 0.0968,
+      "n_frames": 7106,
+      "session": "13",
+      "sha256": "01976e311549fe2dcccde4379167548b2ffa78ff12aa44015429a29191f1f8e3",
+      "source_bdf": "P2",
+      "source_bdfs_seen": [
+        "P2",
+        "Part2",
+        "p2",
+        "part2"
+      ],
+      "start_sec": 14.28,
+      "truncate_to": "eeg",
+      "width": 1280,
+      "youtube": "https://youtu.be/0wc60tA1klw"
+    },
+    "14_Mime_3": {
+      "clip_seconds": 364.97,
+      "duration_sec": 387.2202,
+      "eeg_seconds": {
+        "max": 364.9727,
+        "min": 364.9219,
+        "n_subjects": 19
+      },
+      "end_sec": 386.84,
+      "file": "14_Mime_3.mp4",
+      "fps": 29.97003,
+      "height": 480,
+      "max_delta_sec": 0.0481,
+      "n_frames": 11605,
+      "session": "14",
+      "sha256": "2576b45fbc3e40222c6eaa406af3c6a9471e2348aa3741a59b1d81f10780d0e0",
+      "source_bdf": "P2",
+      "source_bdfs_seen": [
+        "P2",
+        "Part2",
+        "p2",
+        "part2"
+      ],
+      "start_sec": 21.87,
+      "truncate_to": "eeg",
+      "width": 640,
+      "youtube": "https://youtu.be/0Ala3ypPM3M"
+    },
+    "15_Dance_5": {
+      "clip_seconds": 218.71,
+      "duration_sec": 244.0772,
+      "eeg_seconds": {
+        "max": 218.6523,
+        "min": 218.5703,
+        "n_subjects": 19
+      },
+      "end_sec": 233.85,
+      "file": "15_Dance_5.mp4",
+      "fps": 23.976024,
+      "height": 720,
+      "max_delta_sec": 0.1397,
+      "n_frames": 5852,
+      "session": "15",
+      "sha256": "f3bbbe5bd91a8619b8a809f8faed4a91060ae3404c4fbedeb5d830e8d47d54dc",
+      "source_bdf": "P2",
+      "source_bdfs_seen": [
+        "P2",
+        "Part2",
+        "p2",
+        "part2"
+      ],
+      "start_sec": 15.14,
+      "truncate_to": "eeg",
+      "width": 1280,
+      "youtube": "https://youtu.be/mg6-SnUl0A0"
+    },
+    "16_Mime_6": {
+      "clip_seconds": 356.97,
+      "duration_sec": 536.3024,
+      "eeg_seconds": {
+        "max": 356.8896,
+        "min": 356.8374,
+        "n_subjects": 19
+      },
+      "end_sec": 388.61,
+      "file": "16_Mime_6.mp4",
+      "fps": 29.97003,
+      "height": 360,
+      "max_delta_sec": 0.1326,
+      "n_frames": 16073,
+      "session": "16",
+      "sha256": "68ccec7400d517be4f6afc12944302c4b2b0d4af8e8633f20c5c86ae2078d504",
+      "source_bdf": "P2",
+      "source_bdfs_seen": [
+        "P2",
+        "Part2",
+        "p2",
+        "part2"
+      ],
+      "start_sec": 31.64,
+      "truncate_to": "eeg",
+      "width": 640,
+      "youtube": "https://youtu.be/8V7rhAJF6Gc"
+    }
+  }
+}

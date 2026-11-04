@@ -1,0 +1,150 @@
+EEG2X-Benchmark v3 长期计划与当前进度
+
+本文是 v3 重构的活文档，随进度更新。记录三件事：长期要走到哪里、现在已经做到哪里、下一步按什么顺序做。代码的详细结构说明见 jieshao_benchmark_v3.txt，本文不重复。
+
+一、总目标与不可动摇的约束
+
+v3 的目标是把 v2 在推进中长出来的重复结构推倒重写，同时保持实验逻辑与 v2 一致。具体有五条。
+
+第一，框架只写一遍，编码器可插拔。统一框架的不变量是只换 EEG 编码器，目前有 atm_s、labram、reve、luna、enigma 五个。基线相反，编码器固定，命令行给基线传编码器必须直接报错，而不是悄悄忽略。
+
+第二，编码器只写一遍，跨任务共享。之后接入视频与文本任务时，labram、luna、reve 也要复用同一份实现，所以编码器层从一开始就独立于任务存在，协议里预留了 forward_tokens。
+
+第三，只有一个入口。根目录只有 benchmark.py，下设 run、preprocess、verify、list 四个子命令，被试默认取全部。
+
+第四，预处理一个数据集一个文件，文件内按 profile 分支，不再有根目录下的一堆 preprocess 脚本，eeg2image_benchmark_loader.py 降级成辅助库 common.py。
+
+第五，刺激侧提升为一等概念，图像如何变成回归目标放在 eeg2x/targets/ 下，不再藏在模型目录里。
+
+另有几条硬约束，任何时候都不能违反。全局种子固定为 2000，运行时必须设置 PYTHONHASHSEED=2000。所有预处理与运行产物必须落在 benchmark 仓库内，这是可追溯性要求。完整 ATM、AVDE、ENIGMA 是基线，不能换编码器。LUNA 使用与其余编码器不同的优化器配方，这是有意的偏离，代价与依据记录在 v2 的 LUNA_TRAINING_DEVIATION.md，v3 用 EncoderSpec.optimizer 把它数据化，但结论不变，LUNA 的行不能与其他编码器并列排名。另外，v3 仓库里不允许留任何临时性的模型健康监控代码，这类东西只属于诊断过程，不属于 benchmark。tab_benchmark_setup.tex 与 tab_benchmark_setup_en.tex 两个表格文件暂时冻结，不要改动。
+
+二、长期路线
+
+第一阶段是 EEG 到图像重建，也就是当前阶段。目标是让 v3 完全承接 v2 的图像重建实验，包括框架的五个编码器、三个基线、噪声对照实验、完整的训练链路和单元测试。这一阶段完成的标志是：五个编码器与两个基线的推理结果与 v2 在容差内一致，噪声对照可以一键复现，训练阶段不再是桩，测试覆盖编码器契约、checkpoint 兼容、路径适配、预处理分派、指标语义与命令行守卫。
+
+第二阶段是 EEG 到视频。复用同一套编码器与同一套框架阶段表，新增视频刺激侧的目标提取与视频指标，任务接口新增 video 分支。
+
+第三阶段是 EEG 到文本。同样复用编码器与框架，新增文本刺激侧与文本指标，文本任务接口已经在 eeg2x/tasks/text.py 预留。
+
+检索任务与分类任务暂不考虑，接口留在 eeg2x/tasks/image.py 里但不接线。最终形态是 v3 成为唯一在用的 benchmark，v2 转为历史参照与结果存档。
+
+三、已经完成并且验证过的部分
+
+编码器层已经完成。五个编码器统一到 eeg2x/encoders/base.py 定义的协议下，模型数学逐字复制自 v2。LUNA 的论文优化器配方写成 LUNA_OPTIMIZER，由编码器自己声明，训练器读取声明，没有声明的走框架默认配方，只有一条训练代码路径。
+
+框架层已经完成。eeg2x/frameworks/only_clip 只有一份实现，checkpoint.py 负责把 v2 的键名迁移进新结构，pipeline.py 用阶段表串起链路。换编码器只改一个参数。
+
+统一命令行已经完成。benchmark.py 转调 eeg2x/cli.py，run、preprocess、verify、list 四个子命令可用，基线传编码器会被拒绝。verify 会跑一遍推理并与 v2 的评测结果逐指标对比。
+
+预处理层已经完成并逐数据集验证。四个数据集各自一个模块，几何参数按 profile 编号查表分派。ds005106 与 ds004018 与 v2 位级一致，指纹也一致。ThingsEEG 位级一致，指纹只差 source_file 路径。NOD 差 8.55e-05，只有 MNN 矩阵哈希不同，归因于 sklearn 的 Ledoit-Wolf 版本敏感性，并且已经用 v3 自跑两遍位级一致排除了自身随机性。
+
+刺激侧已经完成。eeg2x/targets/clip.py 把刺激图像过 CLIP ViT-H/14 写成特征库，按刺激标识索引并记录图像哈希。
+
+推理验证已经完成。五个编码器在 ThingsEEG sub-01 上与 v2 逐指标对比，最大绝对差分别是 enigma 6.1e-04、labram 2.6e-03、reve 2.8e-03、atm_s 4.9e-03、luna 1.2e-02，都落在 2e-2 的容差内。v3 在同一台机器上重跑是位级一致的；跨机器会有 fp32 漂移，嵌入层约 1.9e-3，经投影与扩散放大后最坏约 1.2e-2，这也是容差定为 2e-2 的依据。五个编码器与两个基线的验证产物都在 EEG2X-Benchmark-v3/artifacts/thingseeg/ 下。
+
+基线与验证。ENIGMA 已移植并与 v2 的差值是 1.76e-03，AVDE 已移植并与 v2 的差值是 1.07e-02。完整 ATM 的代码已经搬进 eeg2x/baselines/atm_full，并写了 ATMS 兼容垫片，但原实现只有训练流程，还缺只推理入口，按之前的决定暂时不做。
+
+打包已经完成到可上传的程度。pyproject.toml、包结构、python -m build 都成功，dist 下有 wheel 与 sdist，twine check 通过。上传 TestPyPI 卡在令牌上，第一次命令里写的是中文占位符，报了 UnicodeEncodeError，尚未重试。
+
+文档。jieshao_benchmark_v3.txt、根目录 README.md、requirements-v3.txt、docs/README.md 都已写好。docs/README.md 里还留着“根 README 待写”这句过期的话，README.md 其实已经存在。
+
+四、本次会话做完但一次都没有跑过的部分：噪声对照接线
+
+噪声对照回答的问题是模型到底有没有在用 EEG：把整段测试集 EEG 换成标准正态噪声，权重全部冻结，图像目标与超参一律不动，照常推理与评测。共享实现在 eeg2x/noise_control.py，早期迁移时已经把实现搬全了，缺的只是接到注入点上。
+
+框架侧改了三个文件。eeg2x/frameworks/only_clip/embed.py 增加 noise 与 noise_seed 参数，在取每个 batch 前注入噪声，并从编码器读取 valid_samples，使 LUNA 尾部二十四个结构性零填充不被替换，否则会触发它 forward 里的零填充断言。噪声条件与种子写进 embedding 的 HDF5 属性与 manifest。eeg2x/frameworks/only_clip/pipeline.py 把输出根改为干净输出目录下的 noise_control 子目录，结构上不可能覆盖干净结果；收尾时写旁挂的 noise_meta.json，并调用 validate_noise_outputs 对比干净与噪声两套图，确认注入真的生效而不是开关接错了地方。eeg2x/cli.py 给 run 与 verify 都加了 --noise 与 --noise-seed，verify 在噪声条件下自动改比 v2 的噪声参照。
+
+基线侧改了三个文件。eeg2x/baselines/enigma/runner.py 与 eeg2x/baselines/avde/runner.py 把噪声参数透传下去。ENIGMA 与 AVDE 的 pipeline 本身在早期移植时就带着完整的噪声实现，只是上层没有入口。eeg2x/baselines/avde/pipeline.py 的 run_avde 新增噪声参数，checkpoint 仍从干净根目录读，生成、评测与 run_config 改写进 noise_control 子目录。
+
+验证状态必须说清楚：只对 eeg2x/cli.py、only_clip/embed.py、only_clip/pipeline.py 做过语法解析，三个文件通过。基线那三个文件的语法检查没有跑成，当时 shell 停在 v2 目录，python 解释器路径不存在，命令直接失败。所以基线三个文件连语法都还没验过，数值对照更是一次都没做。
+
+完整 ATM 的噪声注入点在 v2 里与框架共用同一个函数，理论上在 v3 会随框架的 embed_split 一起白拿，但 v3 的完整 ATM 还没有只推理入口，所以这部分暂时谈不上接线。
+
+五、tasks 接口：已经接线
+
+这一项已经完成，不是待办。eeg2x/tasks/image.py 现在提供 EegSpec.from_h5 与 eeg_spec_from_h5_files，从产物 HDF5 读取采样率、通道表、时间窗、valid_samples 与预处理步骤，不再依赖硬编码的 32 通道常量；ThingsEEG 实际是 63 通道，LaBraM 与 REVE 的分支是 200 Hz，LUNA 是 256 Hz，这些以 HDF5 为准。TaskSpec 补上了 lower_is_better，图像生成任务的八项指标由任务契约做权威定义，evaluation/registry.py 通过 _image_generation_metrics 引用它，不再两处各写一份。
+
+评测侧也接了。evaluate_predictions 会把从 HDF5 推出的 EEG 契约与任务声明写进报告的 task_contract 字段，包括 task_id、output_type、metrics、lower_is_better 与 eeg。框架的 pipeline 在每次运行结束写 run_config.json，记录同一份契约、阶段列表、噪声条件与种子；ENIGMA 与 AVDE 原本就有 run_config，现在框架也有。
+
+text.py 与 speech.py 仍是原样迁移，尚未接线，留待文本任务阶段。
+
+六、尚未完成的其他事项
+
+训练阶段已经实现，不是桩。eeg2x/frameworks/only_clip/train.py 先训练编码器与 ATM 头，再在训练集嵌入上训练替换扩散先验的 Linear 投影头，优化器从 EncoderSpec.optimizer 读取，LUNA 的配方有消费方，其余编码器走框架统一配方，训练循环只有一条代码路径。训练必须显式请求，即 --stages train；默认的 all 与 inference 仍只跑推理四步。这部分代码已写好，但因为环境丢失，尚未在本机验证。
+
+测试一个都没有写。需要覆盖的六类已经在计划里：编码器契约、checkpoint 兼容、路径适配、预处理分派、指标语义、命令行守卫。此外还应该加一条端到端的小样本回归，把与 v2 的指标对比固化成测试而不是靠人工看表。
+
+噪声对照已经有命令行入口，run 与 verify 都接受 --noise 与 --noise-seed，产物落在 noise_control 子目录并写旁挂 meta。但它还没有运行验证，docs/NOISE_EXPERIMENT.md 的 v3 版本也还没写，该文档目前仍指向 v2 的四个注入点。
+
+完整 ATM 缺只推理入口，也缺噪声接线，按之前决定暂缓。
+
+TestPyPI 尚未上传，等有令牌时执行即可，产物已经构建好并通过 twine check。
+
+七、环境设计：一套代码，多套环境
+
+原来的 requirements-v3.txt 假设整个 benchmark 能在一个 Python 环境里跑，这个假设是错的。图像框架依赖 diffusers 0.30 与 SDXL，视频框架依赖 AnimateDiff 与另一套 diffusers，LaBraM 依赖 braindecode 1.3.2，LUNA 依赖 rotary_embedding_torch，eegvid_nice 依赖 torch_geometric，把这些版本锁进一个环境只会互相牵制。所以 v3 改为多环境设计。
+
+仓库不再维护唯一的 requirements-v3.txt，而是在 environments/ 下按用途给出若干份固定版本的说明，例如 image.txt、image-braindecode.txt、image-luna.txt、video.txt。每一份对应一个实际可用的解释器，仓库本身不负责创建环境。
+
+运行时把环境当成参数而不是仓库属性。每个编码器已经在 EncoderSpec.required_packages 里声明依赖，基线也会声明自己的依赖；CLI 在构造模型前检查当前解释器，缺包时直接报错，并指出应该换用哪一份环境说明。benchmark.py env 子命令打印当前解释器、各包的版本，以及在这个环境下能跑哪些模型、编码器与数据集。
+
+环境之间只通过产物交接：HDF5、checkpoint、评测报告，不共享运行时对象，也不要求同一个解释器能导入所有模块。因此导入路径必须保持惰性：LaBraM 的 braindecode 在构造函数里导入，LUNA 的实现只在构造时导入，torch_geometric 只在 eegvid_nice 分支导入。
+
+环境本身不放在仓库里，也不写死路径。当前用哪个解释器由使用者提供；旧的图像环境不再使用，后续由使用者重新复制。权重缓存位于 /datas/hf-cache。
+
+环境恢复后的验证顺序建议如下。第一步，对本次改过的文件做导入与语法检查。第二步，跑框架的噪声对照，先跑 atm_s 的 ThingsEEG sub-01，因为 v2 在 artifacts/only_clip_linear_seed2000/atm/sub-01/noise_control/evaluation/generation_clip.json 有现成参照，可以直接用 verify 的噪声模式对比。第三步，跑 luna 的噪声对照，验证 valid_samples 分支确实只替换前 256 个采样。第四步，跑 enigma 与 avde 的噪声对照，两个基线在 ThingsEEG sub-08 上都有 v2 的噪声参照。
+
+八、当前任务清单
+
+进行中：框架链路的噪声对照验证。代码已改完，未运行。
+进行中：ENIGMA 与 AVDE 的噪声对照验证。代码已改完，未运行，其中三个文件连语法都未检查。
+待开始：视频重建合并。范围已确认，见第九节。
+待开始：单元测试与端到端回归。
+待开始：完整 ATM 的只推理入口与噪声接线。
+待开始：TestPyPI 上传。
+维护项：docs/README.md 中“根 README 待写”一句已经过期，应删除。
+维护项：eeg2x/cli.py 里“train 仍是桩”的注释已经过期，本次已修正。
+
+九、视频重建的合并范围（已确认）
+
+视频重建代码在 /datas/eeg_benchmark_project/fuxian/fuxian-eeg2video-1/EEG2X-Benchmark-v2，最终产物清单见同目录的产物路径.txt，实验数值以实验报告10.txt 为准，tab_raw_data.tex 暂不改动。纳入 v3 的范围是：三套数据集（SEED-DV 二十名被试、Smit2025 二十名、EMD 六名）各五个统一框架编码器（eegnet、labram、reve、luna、eegvid_nice），合计 228 条轨道；外加两族 Orig 基线，即 EEGVid Orig 与 EEG2Video Orig。MindCine 不纳入。
+
+Orig 实际可用的轨道是五条。EEGVid Orig 在三个数据集上各一条，EMD 只保留 sub-02_k1250。EEG2Video Orig 只有 Smit2025 的 sub-01 与 EMD 的 sub-01 有报告；SEED-DV 的 EEG2Video Orig 没有产物，只有 shared 目录，暂不纳入。
+
+合并的主要难点：视频仓库自带一份 vendored 的 LaBraM、REVE、LUNA，与 v3 基于 braindecode 的 LaBraM 不是同一份实现，需要先做权重与输出等价性验证；视频是 Scheme D 加 AnimateDiff 的另一套框架，不是 Only-CLIP；目标空间是 CLIP 文本嵌入而非图像嵌入；噪声语义是匹配均值方差的零均值高斯，与图像的标准正态不同；产物在 runs 下而非 artifacts 下；模型根目录靠环境变量在 import 时读取。
+
+已经迁入 v3 的部分：eeg2x/tasks/video.py 提供 VideoSample 与输出契约；eeg2x/metrics/video_generation.py 提供七项指标及 shuffled 与 delta 版本，并已注册；evaluation/registry.py 增加 video_generation 条目，evaluator.py 增加 gt_frames 真值提取与视频预测解析；datasets.py 增加三套视频数据集与每个数据集乘编码器的 profile 映射，DatasetSpec 增加 task 字段；profiles_video.py 整体迁入视频 profile，profiles.py 只合并 task_id 为 video_generation 的条目；preprocessing/video.py 整体迁入视频 loader，preprocessing/__init__.py 增加视频分派；frameworks/eeg2video/ 迁入 Scheme D 加 AnimateDiff 框架与 vendored 编码器，pipeline.py 实现 generate 与 evaluate 两阶段并支持噪声条件；baselines/eeg2video_orig/ 与 baselines/eegvid_orig/ 是两条 Orig 链的只推理适配器，checkpoint 与共享缓存用软链接接入，不复制；CLI 增加 eeg2video 框架、视频数据集、两条 Orig 基线与 --generator-dtype。
+
+已经验证：SEED-DV 的 eegnet sub-01 在 v3 中重跑了 200 条片段，七项指标与视频仓库的 report.fp16.json 逐位相同，最大差为 0；两条 Orig 基线的 load() 预检都通过，checkpoint 与共享缓存能通过软链接找到；SEED-DV 的预处理已在 v3 中跑通，train 与 test 两个 HDF5 的 data、gt_frames、event_concept、stimulus_id、caption、channel_names 与视频仓库的产物逐元素相等，字节哈希不同只来自 HDF5 变长字符串的存储元数据。移植中发现并修复了一个缺口：v3 的 write_common_h5_metadata 少了 seed_protocol、seed_value、seed_state_json、seed_fingerprint 四个属性，补上后 v3 产物才能通过 validate_protocol_v2。另一个差异是 encoder_window_specs_json：视频仓库的旧 H5 写在 eegvid_nice 加入之前，所以只有四个编码器，v3 的当前代码写五个，这是版本差而不是数据差。
+
+噪声条件也已在 SEED-DV 的 eegnet sub-01 前两条片段上跑通：产物落在 noise_control/，与干净帧不同（平均绝对差 31.6/255），旁挂 meta 已写。视频噪声是匹配每个试次自身均值与方差的零均值高斯，与图像侧的标准正态不同，这一点在合并时保留为两套语义。
+
+尚未完成：EEGVid Orig 与 EEG2Video Orig 的生成实测（只做了 load 预检）、视频训练阶段、vendored 编码器与 eeg2x.encoders 的去重验证。
+
+编码器去重是当前最大的未决问题。视频框架沿用视频仓库 vendored 的 LaBraM、REVE、LUNA，因为视频 checkpoint 是按它们的参数布局与池化方式训练的：vendored LUNA 对 query 维取均值，而 v3 图像侧的 LunaEncoder 用了一个带参数的注意力池 LunaTemporalPool；vendored LaBraM 是作者实现，v3 图像侧是 braindecode 1.3.2 的实现。直接换成 v3 的编码器会导致 state_dict 不匹配。要真正做成「编码器只写一遍」，需要二选一：把一侧的 checkpoint 做键映射与池化等价转换，或者重训一侧；在此之前，视频部分与图像部分各自保留一份 labram/reve/luna。eegnet 与 eegvid_nice 是视频专有的，不存在重复。
+
+十、文本生成的合并（进行中）
+
+文本代码在 /datas/eeg_benchmark_project/fuxian/fuxian-GLIM/EEG2X-Benchmark-v2-GS，最终产物清单见同目录的产物路径_eeg2text.txt，环境是 /datas/linshishangchuan/glim_2。四套数据集是 ZuCo1、ZuCo2、TMNRED、Chisco；本轮先用 ZuCo2 与 Chisco 验证推理。
+
+已经迁入 v3 的部分：metrics/semkey_metrics.py 与 tokenization.py 提供 15 项 SemKey 指标并已注册；evaluation 的文字分支读取 target_texts_json 并把 mtv_references 传给 MTV BLEU；sentence_generation 的默认指标改为 SemKey 套件；frameworks/glim/ 迁入 GLIM 核心（glim_v2）、文本基类与 datamodule、LaBraM 与 LUNA/REVE 适配器、third_party；pipeline.py 按 checkpoint 的 hyper_parameters 选择 LM 与 prompt 条件，生成句子并评测；datasets.py 增加 zuco2 与 chisco；CLI 增加 glim 框架、文本编码器与 glim_orig 基线。
+
+已经验证：在 ZuCo2 的 YAC 被试上，v3 生成的 44 句与原始 generate_sentence_predictions.py 在当前环境下的输出逐字相同（44/44）；GLIM 主模型的 checkpoint 在 v3 里加载为 missing=0、unexpected=0。评测层方面，用 v3 重算已有的 zuco2_glim 预测，BLEU 四项与 SBERT cosine 与原始 report_semkey.json 完全一致，Frechet 差 5e-9，四项 n-way 差在 1.5e-4 以内（随机试验与跨机器 RNG 漂移），5 项依赖 NLTK 的指标因为环境缺少 punkt_tab 与 stopwords 语料返回 nan。
+
+完整验证结果：ZuCo2 的 glim 变体跑完 1093 条，Chisco 的 glim 跑完 3000 条，ZuCo2 的 GLIM Orig 跑完 1093 条，样本数都与参考一致。指标与参考的差异在小数点后第二到第三位，来源有两个：当前环境重新生成的句子与存档预测不同（YAC 上与原始脚本逐字一致 44/44，但存档预测是另一台机器生成的，只有 17/44 相同），以及 n-way 的随机试验。评测层用存档预测重算时 BLEU 四项与 SBERT 完全一致，说明差异来自生成而非评测。
+
+阻塞：5 项依赖 NLTK 的指标（content recall、dist-1/2、head entropy、length MAE）因为环境缺少 punkt_tab 与 stopwords 语料而返回 nan；下载语料不是安装新的 Python 包，但需要使用者确认是否允许。其余 10 项已能计算。
+
+尚未完成：LaBraM、LUNA、REVE 三个变体的完整运行（pipeline 已支持，只差跑）、EEG-To-Text 与 RAG 两个基线、文本预处理脚本、ZuCo1 与 TMNRED。
+
+十一、v3.1：多环境设计与检索整合
+
+v3.1 是 v3 的代码与文档副本，不含 artifacts、h5、dist、.venv，体积约 7.7 MB；原 v3 目录保持不动，作为备份。本次改动全部在 EEG2X-Benchmark-v3.1 下。
+
+多环境设计已经落地。environments/ 下有 image、image-braindecode、image-luna、video、text、retrieval 六份按用途分开的说明；eeg2x/environments.py 登记每个框架与基线需要的包，只做 find_spec 与 importlib.metadata 检查，不导入重包；benchmark.py env 打印当前解释器、包版本、各环境缺失项与可跑的模型；run 的每条分派在导入具体框架之前做前置检查，缺包时直接报错并指出该换哪份说明。已在空解释器（Python 3.12，只有基础包）、glim_2 与 eeg2video 三个解释器上验证：空解释器能正确列出全部缺失，glim_2 识别 text 可用，eeg2video 识别 video 可用。
+
+检索整合的评测层已经完成。eeg2x/retrieval/ 登记 15 个数据集键（Grootswagers2019 拆成 5 Hz 与 20 Hz）、11 个模型与轨道布局；evaluate.py 从 predictions.npz 与 test_samples.jsonl 重算 subject-agg 的 top1/top5/top10 与中位排名，采用全局候选集、L2 归一化与余弦相似度；benchmark.py retrieval 支持 --list 与 --mode evaluate。330 条轨道全部可枚举。对照结果：THINGS-EEG 与 Grootswagers2019 5Hz 的 labram seed-33 与参考逐位一致（差约 2.5e-8），ZuCo1 最大差 1.4e-3，ds005662 最大差 1.7e-4；参考实现的分组与并列处理未公开，比较留 2e-3 容差。
+
+检索的推理适配器已经写好但当前跑不了。adapter.py 通过 EEG2X_EEGBENCH_PYTHON 指定的解释器调用 EEGBench 自己的 eegbench.launch ... evaluate，从 weights.pt 重新加载并前向，属于推理而非训练；它会先探测 neuralbench、neuraltrain、neuralset、neuralfetch 是否可导入。当前 /EEG_bench_open 的 vendor 只剩 neuralbench，另外三个包的源码已被清理，本机也没有可用的 Python 3.12 环境，所以 --mode infer 会给出明确错误并指向 environments/retrieval.txt。
+
+尚未完成：恢复 NeuralBench 运行环境以真正跑检索推理；检索训练不接（本轮只要推理）；330 条轨道的评测结果还没有逐条扫描汇总。

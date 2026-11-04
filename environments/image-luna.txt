@@ -1,0 +1,3 @@
+# 在 image.txt 之上加 LUNA。
+-r image.txt
+rotary-embedding-torch==0.8.9

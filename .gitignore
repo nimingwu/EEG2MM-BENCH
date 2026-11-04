@@ -1,0 +1,13 @@
+artifacts/
+h5/
+dist/
+build/
+*.egg-info/
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+ThingsEEG
+*.tmp
+.DS_Store

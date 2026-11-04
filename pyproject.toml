@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eeg2mm-bench"
+version = "3.1.0"
+description = "EEG2MM-BENCH: unified EEG-to-image/video/text benchmark with swappable encoders"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "EEG2X-Benchmark contributors" }]
+keywords = ["EEG", "benchmark", "image-reconstruction", "clip", "neuroscience"]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "numpy>=1.24,<2",
+    "scipy>=1.10",
+    "h5py>=3.8",
+    "Pillow>=9",
+    "einops>=0.6",
+    "timm>=0.9",
+    "torch>=2.0",
+    "torchvision>=0.15",
+    "transformers>=4.30",
+    "diffusers>=0.25",
+    "accelerate>=0.20",
+    "safetensors>=0.4",
+    "huggingface_hub>=0.20",
+    "mne>=1.6",
+    "scikit-learn>=1.2",
+]
+
+[project.optional-dependencies]
+# 编码器专属依赖。基础安装不含它们，缺失时 EncoderSpec.require_packages 会给明确错误。
+labram = ["braindecode==1.3.2", "torchaudio"]
+luna = ["rotary-embedding-torch==0.8.9"]
+all = [
+    "braindecode==1.3.2",
+    "torchaudio",
+    "rotary-embedding-torch==0.8.9",
+]
+
+[project.urls]
+Homepage = "https://github.com/example/eeg2x-benchmark"
+
+[project.scripts]
+eeg2x = "eeg2x.cli:main"
+
+[tool.setuptools]
+# 不用 include-package-data：包内有一个指向仓库外的 pretrained 软链接，
+# 跟随它会把 1.7 GB 权重打进 wheel。数据文件在下面显式列出。
+include-package-data = false
+
+[tool.setuptools.packages.find]
+include = ["eeg2x*"]
+
+[tool.setuptools.package-data]
+"eeg2x.encoders" = ["channel_mappings/*.json"]
+
+[tool.setuptools.exclude-package-data]
+"eeg2x.baselines.avde" = ["pretrained/*"]
