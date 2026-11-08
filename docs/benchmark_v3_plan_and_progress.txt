@@ -32,7 +32,7 @@ v3 的目标是把 v2 在推进中长出来的重复结构推倒重写，同时�
 
 编码器层已经完成。五个编码器统一到 eeg2x/encoders/base.py 定义的协议下，模型数学逐字复制自 v2。LUNA 的论文优化器配方写成 LUNA_OPTIMIZER，由编码器自己声明，训练器读取声明，没有声明的走框架默认配方，只有一条训练代码路径。
 
-框架层已经完成。eeg2x/frameworks/only_clip 只有一份实现，checkpoint.py 负责把 v2 的键名迁移进新结构，pipeline.py 用阶段表串起链路。换编码器只改一个参数。
+框架层已经完成，并做过一次职责拆分。eeg2x/frameworks/only_clip 现在只保留 Only-CLIP 需要的 clip 阶段：checkpoint.py 负责把 v2 的键名迁移进新结构，pipeline.py 用阶段表串起链路，换编码器只改一个参数。完整 ATM 专用的 low_level.py、semantic.py、sdxl_low_level.py、modeling_git.py 已经移到 eeg2x/baselines/atm_full；only_clip/inference.py 删除了 _StageNotWired、low_level/semantic 分支及其 helper，only_clip/train.py 删除了未使用的 retrieval 分支，pipeline.py 去掉了 preprocess stage。only_clip 从 5248 行降到 2128 行。atm_full/pipeline.py 改用 atm_full.inference 自带的完整 generate_stage，不再依赖 only_clip 的 stub。已验证两个包的模块导入、py_compile，以及 clip 生成路径在 200 行真实 H5 上的 smoke test（假生成器）；完整图像推理没有重跑。
 
 统一命令行已经完成。benchmark.py 转调 eeg2x/cli.py，run、preprocess、verify、list 四个子命令可用，基线传编码器会被拒绝。verify 会跑一遍推理并与 v2 的评测结果逐指标对比。
 
@@ -44,7 +44,7 @@ v3 的目标是把 v2 在推进中长出来的重复结构推倒重写，同时�
 
 基线与验证。ENIGMA 已移植并与 v2 的差值是 1.76e-03，AVDE 已移植并与 v2 的差值是 1.07e-02。完整 ATM 的代码已经搬进 eeg2x/baselines/atm_full，并写了 ATMS 兼容垫片，但原实现只有训练流程，还缺只推理入口，按之前的决定暂时不做。
 
-打包已经完成到可上传的程度。pyproject.toml、包结构、python -m build 都成功，dist 下有 wheel 与 sdist，twine check 通过。上传 TestPyPI 卡在令牌上，第一次命令里写的是中文占位符，报了 UnicodeEncodeError，尚未重试。
+打包产物已经构建并上传到 TestPyPI。pyproject.toml、包结构、python -m build 都成功，wheel 与 sdist 通过 twine check，eeg2mm-bench 3.1.0 已在 TestPyPI 上。但当前不把 PyPI 安装作为正式使用方式，README 改为按任务创建多个环境、从仓库根目录直接运行；打包配置只保留给以后发布。
 
 文档。jieshao_benchmark_v3.txt、根目录 README.md、requirements-v3.txt、docs/README.md 都已写好。docs/README.md 里还留着“根 README 待写”这句过期的话，README.md 其实已经存在。
 
@@ -78,19 +78,21 @@ text.py 与 speech.py 仍是原样迁移，尚未接线，留待文本任务阶�
 
 完整 ATM 缺只推理入口，也缺噪声接线，按之前决定暂缓。
 
-TestPyPI 尚未上传，等有令牌时执行即可，产物已经构建好并通过 twine check。
+TestPyPI 已上传 eeg2mm-bench 3.1.0，但当前不对外推广包安装；正式使用以仓库根目录的源码运行为准，环境配置见 environments/README.md。
 
 七、环境设计：一套代码，多套环境
 
 原来的 requirements-v3.txt 假设整个 benchmark 能在一个 Python 环境里跑，这个假设是错的。图像框架依赖 diffusers 0.30 与 SDXL，视频框架依赖 AnimateDiff 与另一套 diffusers，LaBraM 依赖 braindecode 1.3.2，LUNA 依赖 rotary_embedding_torch，eegvid_nice 依赖 torch_geometric，把这些版本锁进一个环境只会互相牵制。所以 v3 改为多环境设计。
 
-仓库不再维护唯一的 requirements-v3.txt，而是在 environments/ 下按用途给出若干份固定版本的说明，例如 image.txt、image-braindecode.txt、image-luna.txt、video.txt。每一份对应一个实际可用的解释器，仓库本身不负责创建环境。
+仓库不再维护唯一的 requirements-v3.txt，而是在 environments/ 下按用途给出若干份固定版本的说明，例如 image.txt、image-braindecode.txt、image-luna.txt、video.txt、text.txt、retrieval.txt。每一份对应一组固定依赖；图像的三份对应同一个 Python 3.11 环境，仓库本身不负责创建环境。根 README.md 与 environments/README.md 已经写明每种环境的创建步骤：按用途建 venv、安装对应 requirements、再用该环境的解释器运行 benchmark.py；检索环境另写了 NeuroAI 四个包的安装方法、EEG2X_EEGBENCH_ROOT 与 EEG2X_EEGBENCH_PYTHON 的用法。
+
+v2 的统一框架在四个数据集上实际上是用同一个 eeg2x-atm 环境跑完 atm、labram、reve、luna 的，ENIGMA 也在其中；AVDE 使用独立的 /datas/linshishangchuan/avde。历史图像环境已经复制到 /datas/linshishangchuan/11-3-image-env/eeg2x-atm，包含 braindecode 1.3.2 与 rotary 0.8.9，复制时漏掉的 pandas.util.version 已从基础环境补回。因此 v3.1 的安装说明以一个 image 环境装三份 requirements 为主，拆成三份只是说明额外依赖。
 
 运行时把环境当成参数而不是仓库属性。每个编码器已经在 EncoderSpec.required_packages 里声明依赖，基线也会声明自己的依赖；CLI 在构造模型前检查当前解释器，缺包时直接报错，并指出应该换用哪一份环境说明。benchmark.py env 子命令打印当前解释器、各包的版本，以及在这个环境下能跑哪些模型、编码器与数据集。
 
 环境之间只通过产物交接：HDF5、checkpoint、评测报告，不共享运行时对象，也不要求同一个解释器能导入所有模块。因此导入路径必须保持惰性：LaBraM 的 braindecode 在构造函数里导入，LUNA 的实现只在构造时导入，torch_geometric 只在 eegvid_nice 分支导入。
 
-环境本身不放在仓库里，也不写死路径。当前用哪个解释器由使用者提供；旧的图像环境不再使用，后续由使用者重新复制。权重缓存位于 /datas/hf-cache。
+环境本身不放在仓库里，也不写死路径。当前用哪个解释器由使用者提供；已知可用的解释器与恢复步骤都写在 environments/README.md，不依赖某台机器上的旧路径。权重缓存位于 /datas/hf-cache。
 
 环境恢复后的验证顺序建议如下。第一步，对本次改过的文件做导入与语法检查。第二步，跑框架的噪声对照，先跑 atm_s 的 ThingsEEG sub-01，因为 v2 在 artifacts/only_clip_linear_seed2000/atm/sub-01/noise_control/evaluation/generation_clip.json 有现成参照，可以直接用 verify 的噪声模式对比。第三步，跑 luna 的噪声对照，验证 valid_samples 分支确实只替换前 256 个采样。第四步，跑 enigma 与 avde 的噪声对照，两个基线在 ThingsEEG sub-08 上都有 v2 的噪声参照。
 
@@ -98,10 +100,10 @@ TestPyPI 尚未上传，等有令牌时执行即可，产物已经构建好并�
 
 进行中：框架链路的噪声对照验证。代码已改完，未运行。
 进行中：ENIGMA 与 AVDE 的噪声对照验证。代码已改完，未运行，其中三个文件连语法都未检查。
-待开始：视频重建合并。范围已确认，见第九节。
+已完成：视频重建的推理合并与 labram、reve、luna 的 SEED-DV 训练验证，训练入口已接入 CLI。
 待开始：单元测试与端到端回归。
 待开始：完整 ATM 的只推理入口与噪声接线。
-待开始：TestPyPI 上传。
+已完成：TestPyPI 上传 3.1.0。正式 PyPI 未发布，当前以源码方式运行。
 维护项：docs/README.md 中“根 README 待写”一句已经过期，应删除。
 维护项：eeg2x/cli.py 里“train 仍是桩”的注释已经过期，本次已修正。
 
@@ -119,7 +121,11 @@ Orig 实际可用的轨道是五条。EEGVid Orig 在三个数据集上各一条
 
 噪声条件也已在 SEED-DV 的 eegnet sub-01 前两条片段上跑通：产物落在 noise_control/，与干净帧不同（平均绝对差 31.6/255），旁挂 meta 已写。视频噪声是匹配每个试次自身均值与方差的零均值高斯，与图像侧的标准正态不同，这一点在合并时保留为两套语义。
 
-尚未完成：EEGVid Orig 与 EEG2Video Orig 的生成实测（只做了 load 预检）、视频训练阶段、vendored 编码器与 eeg2x.encoders 的去重验证。
+视频训练阶段已经验证。用 /datas/linshishangchuan/eeg2video 环境，在 SEED-DV sub-01 上对 labram、reve、luna 各跑完整的 Scheme D 两阶段训练（stage one 200 epoch，stage two 150 epoch）。三个编码器的逐 epoch MSE 与视频仓库的历史记录最大差为 0，最终 stage_one.pt 与 stage_two_linear.pt 的所有张量与 v2 逐位相等；checkpoint 的 encoder 元数据、窗口几何与 model_input_normalization 也与 v2 一致。
+
+训练已经接入 CLI：benchmark.py run --dataset seed_dv --model eeg2video --encoder labram --subjects sub-01 --stages train。视频阶段 epoch 用 --video-stage-one-epochs 与 --video-stage-two-epochs，batch 用 --video-batch-size；--stages train generate evaluate 可以在训练后直接继续生成与评测。训练由 eeg2x.frameworks.eeg2video.train_entry 在独立子进程里执行，checkpoint 写到 artifacts/<dataset>/eeg2video/<subject>/<encoder>/checkpoints，推理优先使用这份 v3 checkpoint，缺失时才回落到视频仓库的干净轨道。
+
+尚未完成：EEGVid Orig 与 EEG2Video Orig 的生成实测（只做了 load 预检）、vendored 编码器与 eeg2x.encoders 的去重验证、视频训练在更多被试与更多数据集上的批量验证。
 
 编码器去重是当前最大的未决问题。视频框架沿用视频仓库 vendored 的 LaBraM、REVE、LUNA，因为视频 checkpoint 是按它们的参数布局与池化方式训练的：vendored LUNA 对 query 维取均值，而 v3 图像侧的 LunaEncoder 用了一个带参数的注意力池 LunaTemporalPool；vendored LaBraM 是作者实现，v3 图像侧是 braindecode 1.3.2 的实现。直接换成 v3 的编码器会导致 state_dict 不匹配。要真正做成「编码器只写一遍」，需要二选一：把一侧的 checkpoint 做键映射与池化等价转换，或者重训一侧；在此之前，视频部分与图像部分各自保留一份 labram/reve/luna。eegnet 与 eegvid_nice 是视频专有的，不存在重复。
 
@@ -135,7 +141,13 @@ Orig 实际可用的轨道是五条。EEGVid Orig 在三个数据集上各一条
 
 阻塞：5 项依赖 NLTK 的指标（content recall、dist-1/2、head entropy、length MAE）因为环境缺少 punkt_tab 与 stopwords 语料而返回 nan；下载语料不是安装新的 Python 包，但需要使用者确认是否允许。其余 10 项已能计算。
 
-尚未完成：LaBraM、LUNA、REVE 三个变体的完整运行（pipeline 已支持，只差跑）、EEG-To-Text 与 RAG 两个基线、文本预处理脚本、ZuCo1 与 TMNRED。
+文本训练已经接入 CLI：benchmark.py run --dataset zuco2 --model glim --encoder labram --stages train inference。训练从源 checkpoint 的 hyper_parameters 继承 text model、prompt 条件、REVE 边界设置与学习率；micro-batch 默认取源 bsz_train，梯度累积把有效优化 batch 补到 576；--text-devices 4 使用 DDP。checkpoint 写到 artifacts/<dataset>/glim/<encoder>/checkpoints，之后的推理优先使用这份 v3 checkpoint。
+
+best-checkpoint 与早停已经补齐。ModelCheckpoint 监控 val/loss_total（GLIM 验证端已记录的 λ·clip + (1−λ)·lm + ε·commitment），mode=min，保存 best-*.ckpt 和 last.ckpt，并写 checkpoints_best/best.json；resolve_checkpoint 优先读取 best.json，没有 best 时回落 last.ckpt。EarlyStopping 监控同一指标，默认 patience=15、min_delta=1e-4，patience<=0 关闭。实测一次 2 epoch 训练正常生成 best/last 与 best.json；把 min_delta 设为 100、patience 设为 1 后，早停实际触发，best.json 记录 stopped_epoch=1。--overwrite 会先清理旧 checkpoint，避免 Lightning 生成 -v1 副本。
+
+文本训练的冒烟验证覆盖了 glim、labram、luna、reve 四个变体。先用 YAC 子集跑 glim：2 epoch、每 epoch 5 个 batch、batch size 8、单卡，18.8M 可训练参数，flan-t5-large 冻结；epoch 0 与 epoch 1 的 checkpoint 有 203/204 个张量变化，text_model 权重不在 state_dict。随后用 CLI 在 ZuCo2 全量数据上对 labram、luna、reve 各跑 2 epoch、每 epoch 5 个 batch、batch size 8、单卡（完整训练是 4 卡）；可训练参数分别为 14.5M、15.8M、78.0M，text_model 均冻结。三者训练后自动生成全部 1093 条测试预测并写出 report_semkey.json，预测数 1093、匹配 1093、无效 0，全流程退出码 0。指标接近随机是预期的，只证明训练、checkpoint 保存、重载、生成与评估接通，不是质量结果。冒烟产物已经移到 artifacts/_text_train_smoke/cli，避免后续正式推理误用 2 epoch 的 checkpoint；best-checkpoint/早停的测试产物在 artifacts/_text_train_smoke/best_check_test。
+
+尚未完成：LaBraM、LUNA、REVE 三个变体的完整训练与运行（只做了 2 epoch 冒烟）、EEG-To-Text 与 RAG 两个基线、文本预处理脚本、ZuCo1 与 TMNRED、4 卡 DDP 验证。
 
 十一、v3.1：多环境设计与检索整合
 

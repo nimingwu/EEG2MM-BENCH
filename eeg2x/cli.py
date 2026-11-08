@@ -255,7 +255,7 @@ def _run_baseline(args: argparse.Namespace, dataset: DatasetSpec,
 
 def _run_video(args: argparse.Namespace, dataset: DatasetSpec,
                subjects: Sequence[str]) -> Path:
-    """视频框架：generate -> evaluate。编码器可换，基线在别处。"""
+    """视频框架：train -> generate -> evaluate。编码器可换，基线在别处。"""
     if args.model != "eeg2video":
         raise SystemExit(
             f"error: {dataset.name!r} is a video dataset; use "
@@ -263,21 +263,43 @@ def _run_video(args: argparse.Namespace, dataset: DatasetSpec,
     encoder = _require_encoder(args, model="eeg2video", dataset=dataset)
     _preflight("eeg2video", encoder)
     from .frameworks.eeg2video.pipeline import (
-        INFERENCE_STAGES, resolve_paths, run_inference,
+        INFERENCE_STAGES, resolve_paths, run_inference, run_training,
     )
-    stages = (tuple(INFERENCE_STAGES)
-              if args.stages in (["all"], ["inference"]) else tuple(args.stages))
+    stages: list[str] = []
+    for stage in args.stages:
+        if stage in ("all", "inference"):
+            stages.extend(INFERENCE_STAGES)
+        elif stage in ("train", *INFERENCE_STAGES):
+            stages.append(stage)
+        else:
+            raise SystemExit(
+                f"error: unsupported video stage {stage!r}; known: train, "
+                + ", ".join(INFERENCE_STAGES))
+    stages = list(dict.fromkeys(stages))
+    train = "train" in stages
+    inference = tuple(s for s in stages if s in INFERENCE_STAGES)
+    if train and args.noise != "none":
+        raise SystemExit("error: --noise cannot be combined with video training")
+
     last: Path | None = None
     for subject in subjects:
         paths = resolve_paths(dataset, encoder, subject)
         log.info("===== %s / eeg2video / %s / %s =====",
                  dataset.name, encoder, subject)
-        last = run_inference(
-            paths, device=args.device,
-            generator_dtype=args.generator_dtype,
-            noise=args.noise, noise_seed=args.noise_seed,
-            overwrite=args.overwrite, stages=stages)
-        log.info("evaluation -> %s", last)
+        if train:
+            last = run_training(
+                paths, device=args.device,
+                stage_one_epochs=args.video_stage_one_epochs,
+                stage_two_epochs=args.video_stage_two_epochs,
+                batch_size=args.video_batch_size)
+            log.info("training -> %s", last)
+        if inference:
+            last = run_inference(
+                paths, device=args.device,
+                generator_dtype=args.generator_dtype,
+                noise=args.noise, noise_seed=args.noise_seed,
+                overwrite=args.overwrite, stages=inference)
+            log.info("evaluation -> %s", last)
     if last is None:
         raise SystemExit("error: no subject was run")
     return last
@@ -285,20 +307,54 @@ def _run_video(args: argparse.Namespace, dataset: DatasetSpec,
 
 def _run_text(args: argparse.Namespace, dataset: DatasetSpec,
               subjects: Sequence[str]) -> Path:
-    """文本框架：一次处理该数据集 h5 目录下的整个 test split。"""
+    """文本框架：train（可选）-> 整个 test split 的生成与评测。"""
     if args.model != "glim":
         raise SystemExit(
             f"error: {dataset.name!r} is a text dataset; use --model glim "
             f"(got {args.model!r})")
     encoder = _require_encoder(args, model="glim", dataset=dataset)
     _preflight("glim", encoder)
-    from .frameworks.glim.pipeline import resolve_paths, run_inference
+    from .frameworks.glim.pipeline import (
+        resolve_paths, run_inference, run_training,
+    )
+    supported = {"all", "inference", "train", "generate", "evaluate"}
+    unknown = [stage for stage in args.stages if stage not in supported]
+    if unknown:
+        raise SystemExit(
+            f"error: unsupported text stage(s) {unknown}; known: "
+            "all, inference, train, generate, evaluate")
+    train = "train" in args.stages
+    inference = any(stage in ("all", "inference", "generate", "evaluate")
+                    for stage in args.stages)
+    if not train and not inference:
+        raise SystemExit("error: text run needs at least one of train or inference")
+    if train and args.noise != "none":
+        raise SystemExit("error: --noise cannot be combined with text training")
     if list(args.subjects) != ["all"]:
-        log.warning("text inference processes the whole test split of %s; "
+        log.warning("text runs process the whole test split of %s; "
                     "--subjects is ignored", dataset.name)
     paths = resolve_paths(dataset, encoder)
-    return run_inference(paths, device=args.device, noise=args.noise,
-                         noise_seed=args.noise_seed, overwrite=args.overwrite)
+    last: Path | None = None
+    if train:
+        last = run_training(
+            paths, epochs=args.text_epochs,
+            batch_size=args.text_batch_size,
+            val_batch_size=args.text_val_batch_size,
+            accumulate_grad_batches=args.text_accumulate_grad_batches,
+            devices=args.text_devices,
+            limit_train_batches=args.text_limit_train_batches,
+            limit_val_batches=args.text_limit_val_batches,
+            num_workers=args.text_num_workers,
+            early_stop_patience=args.text_early_stop_patience,
+            early_stop_min_delta=args.text_early_stop_min_delta,
+            overwrite=args.overwrite)
+        log.info("training -> %s", last)
+    if inference:
+        last = run_inference(
+            paths, device=args.device, noise=args.noise,
+            noise_seed=args.noise_seed, overwrite=args.overwrite)
+        log.info("evaluation -> %s", last)
+    return last
 
 
 def _run(args: argparse.Namespace) -> Path:
@@ -525,6 +581,32 @@ def build_parser() -> argparse.ArgumentParser:
                      help="train 阶段：编码器训练的 batch size")
     run.add_argument("--projection-epochs", type=int, default=150,
                      help="train 阶段：Linear 投影头的轮数")
+    run.add_argument("--video-stage-one-epochs", type=int, default=200,
+                     help="视频 train：阶段一（编码器 + 投影头）的 epoch 数")
+    run.add_argument("--video-stage-two-epochs", type=int, default=150,
+                     help="视频 train：阶段二（tokenwise Linear adapter）的 epoch 数")
+    run.add_argument("--video-batch-size", type=int, default=32,
+                     help="视频训练 batch size；论文默认 32")
+    run.add_argument("--text-epochs", type=int, default=200,
+                     help="文本 train 的 epoch 数")
+    run.add_argument("--text-batch-size", type=int, default=None,
+                     help="文本训练 micro-batch；默认取源 checkpoint 的 bsz_train")
+    run.add_argument("--text-val-batch-size", type=int, default=None,
+                     help="文本验证 batch size；默认取源 checkpoint 的 bsz_val")
+    run.add_argument("--text-accumulate-grad-batches", type=int, default=None,
+                     help="梯度累积；默认按有效 batch 576 自动计算")
+    run.add_argument("--text-devices", type=int, default=1,
+                     help="文本训练 GPU 数；正式训练通常为 4")
+    run.add_argument("--text-limit-train-batches", type=int, default=None,
+                     help="只跑前 N 个训练 batch（冒烟测试用）")
+    run.add_argument("--text-limit-val-batches", type=int, default=None,
+                     help="只跑前 N 个验证 batch（冒烟测试用）")
+    run.add_argument("--text-num-workers", type=int, default=2,
+                     help="文本 DataLoader worker 数")
+    run.add_argument("--text-early-stop-patience", type=int, default=15,
+                     help="文本早停 patience；监控 val/loss_total，<=0 关闭早停")
+    run.add_argument("--text-early-stop-min-delta", type=float, default=1e-4,
+                     help="文本早停的最小改善量")
     run.add_argument(
         "--distinct-images", type=int, default=None,
         help="噪声对照省时档：只真出前 N 张图，其余复用第 (row %% N) 张。"
@@ -540,7 +622,8 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--tolerance", type=float, default=2e-2,
                         help="absolute-diff tolerance (relative for fid). Cross-machine "
                              "fp drift measured at 8.5e-4 (embedding) -> 7.8e-3 (projection) "
-                             "-> 1.2e-2 (inception, worst of 5 encoders); see requirements-v3.txt")
+                             "-> 1.2e-2 (inception, worst of 5 encoders); see "
+                             "docs/benchmark_v3_plan_and_progress.txt")
     verify.add_argument("--against", default="v2", choices=["v2"])
 
     pre = sub.add_parser("preprocess", help="按 profile 生成 HDF5")

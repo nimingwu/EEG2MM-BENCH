@@ -28,20 +28,25 @@ class EnvironmentSpec:
 
 ENVIRONMENTS: Dict[str, EnvironmentSpec] = {
     "image": EnvironmentSpec(
-        "image", "Only-CLIP 图像框架（atm_s / reve / enigma_cnn）与 ENIGMA、AVDE",
+        "image", "Only-CLIP 图像框架（atm_s / reve / enigma_cnn）与 ENIGMA",
         ("torch", "diffusers", "transformers", "timm", "mne", "h5py",
          "sklearn", "numpy", "PIL", "einops"),
-        "environments/image.txt"),
+        "environments/image.txt",
+        notes="已知可用：/datas/linshishangchuan/11-3-image-env/eeg2x-atm"
+              "（含 braindecode 与 rotary，五个编码器共用）；"
+              "AVDE 历史环境：/datas/linshishangchuan/avde"),
     "image-braindecode": EnvironmentSpec(
         "image-braindecode", "image 环境加 LaBraM（braindecode==1.3.2）",
         ("torch", "diffusers", "transformers", "timm", "mne", "h5py",
          "sklearn", "numpy", "PIL", "einops", "braindecode"),
-        "environments/image-braindecode.txt"),
+        "environments/image-braindecode.txt",
+        notes="已知可用：/datas/linshishangchuan/11-3-image-env/eeg2x-atm"),
     "image-luna": EnvironmentSpec(
         "image-luna", "image 环境加 LUNA（rotary-embedding-torch==0.8.9）",
         ("torch", "diffusers", "transformers", "timm", "mne", "h5py",
          "sklearn", "numpy", "PIL", "einops", "rotary_embedding_torch"),
-        "environments/image-luna.txt"),
+        "environments/image-luna.txt",
+        notes="已知可用：/datas/linshishangchuan/11-3-image-env/eeg2x-atm"),
     "video": EnvironmentSpec(
         "video", "EEG-to-Video 框架与 EEGVid / EEG2Video Orig",
         ("torch", "diffusers", "transformers", "torch_geometric",
@@ -62,7 +67,8 @@ ENVIRONMENTS: Dict[str, EnvironmentSpec] = {
          "neuralset", "neuralfetch", "h5py", "yaml", "sklearn", "mne",
          "pandas"),
         "environments/retrieval.txt",
-        notes="当前本机没有可用环境；需恢复 neuroai 的四个包"),
+        notes="已知可用：/datas/linshishangchuan/11-3-jiansuo/eegbench-retrieval；"
+              "推理还需要 EEGBench 的数据缓存"),
 }
 
 

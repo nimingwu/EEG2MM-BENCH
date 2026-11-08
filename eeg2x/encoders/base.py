@@ -148,7 +148,8 @@ class EncoderSpec:
         if missing:
             raise RuntimeError(
                 f"encoder {self.name!r} needs package(s) {missing} which are not "
-                "installed in this environment. See requirements-v3.txt.")
+                "installed in this environment. See environments/README.md and "
+                "install the matching requirements file.")
 
 
 def build(spec: EncoderSpec, n_chans: int, n_samples: int,

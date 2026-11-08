@@ -50,7 +50,7 @@ from eeg2x.rawdata import require_benchmark_output
 
 from .checkpoint import load_only_clip_checkpoint
 from .embed import embed_split
-from .model import OnlyClipModel, generation_alignment_loss, retrieval_alignment_loss
+from .model import OnlyClipModel, generation_alignment_loss
 from .projection import EEGToImageProjection
 
 if TYPE_CHECKING:                       # pragma: no cover
@@ -138,22 +138,15 @@ def build_model(encoder_name: str, contract: Dict[str, object],
     return model, {"encoder": spec.name, "encoder_config": encoder_config}
 
 
-def _framework_loss(model: OnlyClipModel, predicted: Tensor, target: Tensor,
-                    mode: str) -> Tensor:
-    if mode == "retrieval":
-        return retrieval_alignment_loss(
-            predicted, F.normalize(target, dim=-1), model.logit_scale,
-            model.loss_func)
-    if mode == "generation":
-        return generation_alignment_loss(
-            predicted, target, model.logit_scale, model.loss_func)
-    raise ValueError(f"Unsupported training mode: {mode!r}")
+def _framework_loss(model: OnlyClipModel, predicted: Tensor,
+                    target: Tensor) -> Tensor:
+    return generation_alignment_loss(
+        predicted, target, model.logit_scale, model.loss_func)
 
 
 @torch.inference_mode()
 def evaluate_model(model: OnlyClipModel, dataset: ATMH5Dataset, *,
-                   device: torch.device, batch_size: int = 64,
-                   mode: str = "generation") -> Dict[str, float]:
+                   device: torch.device, batch_size: int = 64) -> Dict[str, float]:
     """测试集上的损失与 top-1/top-5（与 v2 ``evaluate_atm`` 同口径）。"""
     model.eval()
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
@@ -163,13 +156,11 @@ def evaluate_model(model: OnlyClipModel, dataset: ATMH5Dataset, *,
     for batch in loader:
         predicted = model(batch["eeg"].to(device)).float()
         target = batch["target"].to(device).float()
-        losses.append(float(_framework_loss(model, predicted, target, mode).item()))
+        losses.append(float(_framework_loss(model, predicted, target).item()))
         predicted_batches.append(predicted.cpu())
         target_batches.append(target.cpu())
     predicted_all = torch.cat(predicted_batches)
     target_all = torch.cat(target_batches)
-    if mode == "retrieval":
-        target_all = F.normalize(target_all, dim=-1)
     logits = model.logit_scale.detach().cpu() * predicted_all @ target_all.T
     labels = torch.arange(len(dataset))
     top1 = (logits.argmax(dim=1) == labels).float().mean()
@@ -374,7 +365,7 @@ def train_encoder(paths: "RunPaths", *, epochs: int = DEFAULT_EPOCHS,
                 target = batch["target"].to(target_device, non_blocking=True).float()
                 optimizer.zero_grad(set_to_none=True)
                 predicted = model(eeg).float()
-                loss = _framework_loss(model, predicted, target, "generation")
+                loss = _framework_loss(model, predicted, target)
                 loss.backward()
                 optimizer.step()
                 if scheduler is not None:

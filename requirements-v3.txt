@@ -4,14 +4,17 @@
 
 # EEG2X-Benchmark-v3 环境
 #
-# 基础环境（不在本文件里重装，直接用它的 site-packages）：
-#   /datas/linshishangchuan/eeg2x-atm/bin/python   (Python 3.11.15)
+# 历史图像环境副本（v2 五个编码器共用的解释器）：
+#   /datas/linshishangchuan/11-3-image-env/eeg2x-atm/bin/python (Python 3.11.15)
+#   已包含下面列出的 braindecode 与 rotary 等扩展。
 #   torch 2.5.1+cu124 / numpy 1.26.4 / mne 1.9.0 / pandas 2.2.3
 #   einops 0.8.1 / timm 1.0.15 / diffusers 0.30.3 / transformers 4.36.0 / h5py 3.13.0
 #
-# v3 venv 用 `python -m venv --system-site-packages` 建，只补装下面这些。
-# 全部用 `pip install --no-deps`，避免 pip 把 numpy 顶到 2.x、mne 顶到 1.13、
-# torchaudio 顶到与 torch 2.5.1 不匹配的版本——那会让 v2 的 checkpoint 无法复现。
+# 从干净解释器重建时，先装 environments/image.txt，再用 --no-deps 安装
+# environments/image-braindecode.txt 与 image-luna.txt，等价于这个环境。
+# 下面这些扩展用 `pip install --no-deps` 装，避免 pip 把 numpy 顶到 2.x、
+# mne 顶到 1.13、torchaudio 顶到与 torch 2.5.1 不匹配的版本——那会让 v2 的
+# checkpoint 无法复现。
 
 # --- 编码器必需 ---------------------------------------------------------
 # braindecode 的版本不能用最新版。2026-10-21 实测：

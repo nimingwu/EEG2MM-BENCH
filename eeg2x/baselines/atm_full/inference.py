@@ -16,7 +16,7 @@ import torch
 from eeg2x.protocol import sha256_file
 from eeg2x.rawdata import require_benchmark_output
 from eeg2x.frameworks.only_clip.sdxl import Generator4Embeds as ClipGenerator
-from eeg2x.frameworks.only_clip.sdxl_low_level import Generator4Embeds as LowLevelGenerator
+from eeg2x.baselines.atm_full.sdxl_low_level import Generator4Embeds as LowLevelGenerator
 from eeg2x.data import (
     ATM_PROFILE,
     artifact_manifest,
@@ -25,9 +25,9 @@ from eeg2x.data import (
     write_json,
 )
 from eeg2x.baselines.atm_full.diffusion_prior import DiffusionPriorUNet
-from eeg2x.frameworks.only_clip.low_level import LowLevelEEGEncoder
-from eeg2x.frameworks.only_clip.modeling_git import GitForCausalLMClipEmb
-from eeg2x.frameworks.only_clip.semantic import PixelProjector
+from eeg2x.baselines.atm_full.low_level import LowLevelEEGEncoder
+from eeg2x.baselines.atm_full.modeling_git import GitForCausalLMClipEmb
+from eeg2x.baselines.atm_full.semantic import PixelProjector
 from eeg2x.baselines.atm_full.training import load_state_checkpoint, seed_everything
 
 

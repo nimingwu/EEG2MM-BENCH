@@ -1,8 +1,10 @@
-"""EEG-to-Video 框架的推理编排：generate -> evaluate。
+"""EEG-to-Video 框架的编排：train -> generate -> evaluate。
 
-迁自视频仓库的 ``scripts/run_eeg2video_track.py``（generate 与 eval 两段）。
-训练逻辑仍在 ``eeg2x.frameworks.eeg2video.core.scheme_d_training``，本阶段
-只做推理：checkpoint 从视频仓库的干净轨道读，产物写到 v3 的 artifacts 下。
+迁自视频仓库的 ``scripts/run_eeg2video_track.py``。训练逻辑仍在
+``eeg2x.frameworks.eeg2video.core.scheme_d_training``；因为视频的配置模块在
+import 时快照目录环境变量，训练由 :mod:`eeg2x.frameworks.eeg2video.train_entry`
+在独立子进程里跑，CLI 通过 :func:`run_training` 调度。推理优先使用 v3 训练
+出的 checkpoint，没有时回落到视频仓库的干净轨道。
 
 与图像框架的差别：
 
@@ -16,6 +18,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
@@ -56,6 +60,22 @@ class RunPaths:
         return self.source / "checkpoints"
 
     @property
+    def trained_checkpoint_dir(self) -> Path:
+        return self.output / "checkpoints"
+
+    @property
+    def active_checkpoint_dir(self) -> Path:
+        """Prefer a complete v3-trained track, else the v2 source track."""
+        trained = self.trained_checkpoint_dir
+        required = (
+            "stage_one.pt", "stage_one.complete.json",
+            "stage_two_linear.pt", "stage_two_linear.complete.json",
+        )
+        if all((trained / name).is_file() for name in required):
+            return trained
+        return self.checkpoint_dir
+
+    @property
     def test_h5(self) -> Path:
         return self.h5 / f"{self.dataset_id}_{self.subject}_test_epoched.h5"
 
@@ -73,7 +93,8 @@ def resolve_paths(dataset: DatasetSpec, encoder: str, subject: str) -> RunPaths:
                     h5=video_h5_dir(dataset.name, encoder))
 
 
-def _set_track_env(paths: RunPaths, output_root: Path) -> None:
+def _set_track_env(paths: RunPaths, output_root: Path,
+                   *, checkpoint_dir: Path | None = None) -> None:
     """在导入模型之前固定视频框架的目录环境变量。
 
     ``eeg2x.frameworks.eeg2video.core.config`` 在 import 时快照这些变量；
@@ -83,7 +104,8 @@ def _set_track_env(paths: RunPaths, output_root: Path) -> None:
     number = str(paths.subject).split("-")[-1].lstrip("0") or "1"
     os.environ["EEG2VIDEO_SUBJECT"] = number
     os.environ["EEG2VIDEO_RUN_ROOT"] = str((output_root / "work" / paths.subject).resolve())
-    os.environ["EEG2VIDEO_CHECKPOINT_ROOT"] = str(paths.checkpoint_dir.resolve())
+    os.environ["EEG2VIDEO_CHECKPOINT_ROOT"] = str(
+        (checkpoint_dir or paths.active_checkpoint_dir).resolve())
     os.environ["EEG2VIDEO_SHARED_RUN_ROOT"] = str((output_root / "work" / "shared").resolve())
 
 
@@ -152,12 +174,13 @@ def run_inference(paths: RunPaths, *, device: str = "cuda:0",
     unknown = [s for s in stages if s not in STAGES]
     if unknown:
         raise ValueError(f"unsupported video stage(s) {unknown}; known: {list(STAGES)}")
-    for required in (paths.checkpoint_dir / "stage_one.pt",
-                     paths.checkpoint_dir / "stage_two_linear.pt"):
+    checkpoint_dir = paths.active_checkpoint_dir
+    for required in (checkpoint_dir / "stage_one.pt",
+                     checkpoint_dir / "stage_two_linear.pt"):
         if not required.is_file():
             raise FileNotFoundError(
-                f"missing video checkpoint {required}; the inference-only "
-                "milestone reads the video repository's clean track and never trains")
+                f"missing video checkpoint {required}; run the training stage "
+                "or place a complete v2 track under EEG2X_V2_VIDEO_ROOT")
 
     output_root = require_v3_output(paths.output)
     if noise != "none":
@@ -165,7 +188,7 @@ def run_inference(paths: RunPaths, *, device: str = "cuda:0",
         output_root = require_v3_output(output_root / "noise_control")
     output_root.mkdir(parents=True, exist_ok=True)
     video_noise.configure(noise, noise_seed)
-    _set_track_env(paths, output_root)
+    _set_track_env(paths, output_root, checkpoint_dir=checkpoint_dir)
 
     generation_dir = output_root / "generation"
     predictions_path = generation_dir / "predictions.json"
@@ -181,7 +204,7 @@ def run_inference(paths: RunPaths, *, device: str = "cuda:0",
                 "subject_id": paths.subject,
                 "encoder": paths.encoder,
                 "dataset_id": paths.dataset_id,
-                "checkpoint_dir": str(paths.checkpoint_dir),
+                "checkpoint_dir": str(checkpoint_dir),
                 "output_dir": str(generation_dir),
                 "generator_dtype": generator_dtype,
                 "export_videos": export_videos,
@@ -233,14 +256,74 @@ def run_inference(paths: RunPaths, *, device: str = "cuda:0",
         "noise": noise, "noise_seed": int(noise_seed),
         "eeg_contract": contract,
         "seed": SEED,
-        "checkpoint_dir": str(paths.checkpoint_dir),
+        "checkpoint_dir": str(checkpoint_dir),
         "source_h5": [str(paths.test_h5)],
         "derived_inputs_used": False,
     })
     return evaluation
 
 
+def run_training(paths: RunPaths, *, device: str = "cuda:0",
+                 stage_one_epochs: int = 200, stage_two_epochs: int = 150,
+                 batch_size: int = 32) -> Path:
+    """Train both Scheme D stages and return ``training_result.json``.
+
+    The actual training runs in a fresh ``train_entry`` subprocess because the
+    video configuration snapshots its checkpoint/run roots at import time.
+    The parent process therefore never imports the video model, so consecutive
+    subjects or encoders cannot share one checkpoint root.
+    """
+    output_root = require_v3_output(paths.output)
+    output_root.mkdir(parents=True, exist_ok=True)
+    checkpoint_dir = output_root / "checkpoints"
+    work_dir = output_root / "work"
+    result_json = output_root / "training_result.json"
+
+    command = [
+        sys.executable, "-m", "eeg2x.frameworks.eeg2video.train_entry",
+        "--encoder", paths.encoder,
+        "--subject", paths.subject,
+        "--dataset-id", paths.dataset_id,
+        "--h5-dir", str(paths.h5),
+        "--checkpoint-dir", str(checkpoint_dir),
+        "--work-dir", str(work_dir),
+        "--device", device,
+        "--stage-one-epochs", str(int(stage_one_epochs)),
+        "--stage-two-epochs", str(int(stage_two_epochs)),
+        "--batch-size", str(int(batch_size)),
+        "--result-json", str(result_json),
+    ]
+    log.info("training %s/%s/%s -> %s", paths.dataset, paths.encoder,
+             paths.subject, checkpoint_dir)
+    env = os.environ.copy()
+    env["PYTHONHASHSEED"] = "2000"
+    completed = subprocess.run(command, cwd=str(V3_ROOT), env=env)
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"video training failed with exit code {completed.returncode}: "
+            + " ".join(command))
+    if not result_json.is_file():
+        raise FileNotFoundError(
+            f"training subprocess exited successfully but wrote no {result_json}")
+
+    write_json(output_root / "train_config.json", {
+        "experiment_id": output_root.name,
+        "dataset": paths.dataset, "subject_id": paths.subject,
+        "task": "video_generation", "model": "eeg2video",
+        "encoder": paths.encoder,
+        "h5_dir": str(paths.h5),
+        "checkpoint_dir": str(checkpoint_dir),
+        "work_dir": str(work_dir),
+        "stage_one_epochs": int(stage_one_epochs),
+        "stage_two_epochs": int(stage_two_epochs),
+        "batch_size": int(batch_size),
+        "device": device, "seed": SEED,
+        "derived_inputs_used": False,
+    })
+    return result_json
+
+
 __all__ = [
     "INFERENCE_STAGES", "RunPaths", "STAGES", "load_test_samples",
-    "resolve_paths", "run_inference",
+    "resolve_paths", "run_inference", "run_training",
 ]

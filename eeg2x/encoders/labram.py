@@ -7,7 +7,7 @@
 1.6.1 / 1.7.0 / 1.8.1 的 ``Labram`` 缺少 ``fc_norm`` 与
 ``patch_embed.segment_patch``，加载 v2 checkpoint 会 key mismatch。
 该版本号取自 HF 快照 config.json 的 ``braindecode_version`` 字段，
-见 ``requirements-v3.txt``。
+安装见 ``environments/image-braindecode.txt``。
 """
 from __future__ import annotations
 

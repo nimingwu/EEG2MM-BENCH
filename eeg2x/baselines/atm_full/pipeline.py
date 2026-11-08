@@ -13,9 +13,9 @@ from types import SimpleNamespace
 
 log = logging.getLogger(__name__)
 
-from eeg2x.frameworks.only_clip.inference import generate_stage
 from eeg2x.baselines.atm_full.inference import (
     decode_low_level_conditions, generate_captions, generate_prior_embeddings,
+    generate_stage,
 )
 from eeg2x.baselines.atm_full.training import train_low_level, train_prior, train_semantic
 from eeg2x.evaluation.api import evaluate_predictions

@@ -1,3 +1,4 @@
-# 在 image.txt 之上加 LUNA。
--r image.txt
+# 在 image.txt 安装完成后追加 LUNA 的依赖。
+# 用 `pip install --no-deps -r` 安装。
+# 与 image-braindecode.txt 一起装进同一个环境，即为 v2 的 eeg2x-atm。
 rotary-embedding-torch==0.8.9

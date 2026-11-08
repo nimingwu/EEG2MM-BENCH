@@ -33,7 +33,7 @@ from .inference import generate_projected_embeddings, generate_stage
 log = logging.getLogger("eeg2x.only_clip.pipeline")
 
 #: 框架的完整阶段表。``train`` 只有显式请求时才跑；不请求就复用已有检查点。
-STAGES = ("preprocess", "train", "embed", "project", "generate", "evaluate")
+STAGES = ("train", "embed", "project", "generate", "evaluate")
 
 #: 只推理时跑的阶段。
 INFERENCE_STAGES = ("embed", "project", "generate", "evaluate")
@@ -142,9 +142,6 @@ def run_inference(paths: RunPaths, *, device: str = "cuda:0",
     if unknown:
         raise ValueError(
             f"unsupported stage(s) {unknown}; known: {list(STAGES)}")
-    if "preprocess" in stages:
-        raise ValueError(
-            "preprocess is a separate subcommand: python benchmark.py preprocess ...")
     if noise_control.noise_enabled(noise) and "train" in stages:
         raise ValueError(
             "the noise control never trains: weights must be frozen and come "

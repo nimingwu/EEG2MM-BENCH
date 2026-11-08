@@ -111,7 +111,11 @@ def h5_n_channels(h5_dir: Path) -> int:
 
 def _build_model(variant: str, n_ch: int, text_model_id: str,
                  use_null_prompt: bool, prompt_dropout_probs, hparams: Dict[str, Any],
-                 source: Path):
+                 source: Path, *, bsz_train: int | None = None,
+                 bsz_val: int = 24, lr: float = 1e-5,
+                 results_dir: str | Path | None = None):
+    if bsz_train is None:
+        bsz_train = 72 if variant in ("glim", "glim_orig") else 8
     common = dict(
         input_text_len=96, tgt_text_len=64, hidden_eeg_len=96, input_dim=n_ch,
         hidden_dim=256, embed_dim=1024, text_model_id=text_model_id,
@@ -120,27 +124,31 @@ def _build_model(variant: str, n_ch: int, text_model_id: str,
         prompt_nums=(3, 3, 31), prompt_dropout_probs=prompt_dropout_probs,
         n_in_blocks=6, n_out_blocks=6, in_temporal_modulate=True,
         out_is_causal=True, clip_loss_weight=0.5, commitment_loss_weight=0.0,
-        bsz_val=24, full_val_interval=10,
+        bsz_train=int(bsz_train), bsz_val=int(bsz_val), lr=float(lr),
+        full_val_interval=10,
+        results_dir=str(results_dir) if results_dir is not None
+        else str(source / "results"),
     )
     if variant in ("glim", "glim_orig"):
         from .core.glim import GLIM
-        return GLIM(input_eeg_len=1280, bsz_train=72, **common)
+        return GLIM(input_eeg_len=1280, **common)
     if variant == "labram":
         from .labram import GLIMLaBraMText
         return GLIMLaBraMText(
-            input_eeg_len=2000, bsz_train=8, **common,
+            input_eeg_len=2000, **common,
             labram_pretrained=str(
-                V2_TEXT_ROOT / "outputs/glim_labram_seed2000/pretrained/labram-base.pth"))
+                V2_TEXT_ROOT / "outputs/glim_labram_seed2000/pretrained/labram-base.pth"),
+            freeze_labram=bool(hparams.get("freeze_labram", False)))
     if variant == "luna":
         from .foundation import GLIMLunaText
         return GLIMLunaText(
-            input_eeg_len=1280, bsz_train=8, **common,
+            input_eeg_len=1280, **common,
             luna_pretrained=str(
                 V2_TEXT_ROOT / "outputs/luna_seed2000/pretrained/luna-base.safetensors"))
     if variant == "reve":
         from .foundation import GLIMReveText
         return GLIMReveText(
-            input_eeg_len=2000, bsz_train=8, **common,
+            input_eeg_len=2000, **common,
             reve_pretrained=str(
                 V2_TEXT_ROOT / "outputs/reve_seed2000/pretrained/reve-base.safetensors"),
             reve_boundary_norm=hparams.get("reve_boundary_norm", "none"),
@@ -149,11 +157,19 @@ def _build_model(variant: str, n_ch: int, text_model_id: str,
     raise KeyError(f"unknown GLIM variant {variant!r}")
 
 
+def resolve_active_checkpoint(paths: RunPaths) -> Path:
+    """Prefer a checkpoint trained into the v3 output, else the v2 source."""
+    try:
+        return resolve_checkpoint(paths.output)
+    except FileNotFoundError:
+        return resolve_checkpoint(paths.source)
+
+
 def run_inference(paths: RunPaths, *, device: str = "cuda:0",
                   noise: str = "none", noise_seed: int = SEED,
                   batch_size: int = 24, overwrite: bool = False) -> Path:
     """跑一个 (数据集, 变体) 的文本生成与 15 项 SemKey 评测。"""
-    checkpoint = resolve_checkpoint(paths.source)
+    checkpoint = resolve_active_checkpoint(paths)
     output_root = require_v3_output(paths.output)
     if noise != "none":
         output_root = require_v3_output(output_root / "noise_control")
@@ -241,5 +257,150 @@ def run_inference(paths: RunPaths, *, device: str = "cuda:0",
     return evaluation
 
 
+def run_training(paths: RunPaths, *, epochs: int = 200,
+                 batch_size: int | None = None,
+                 val_batch_size: int | None = None,
+                 accumulate_grad_batches: int | None = None,
+                 devices: int = 1, limit_train_batches: int | None = None,
+                 limit_val_batches: int | None = None,
+                 num_workers: int = 2,
+                 early_stop_patience: int = 15,
+                 early_stop_min_delta: float = 1e-4,
+                 overwrite: bool = False) -> Path:
+    """Train a GLIM text variant and return its best (or last) checkpoint.
+
+    The source v2 checkpoint supplies the model hyper-parameters (text model,
+    null-prompt condition, REVE boundary settings, learning rate).  Training
+    writes below the v3 output directory; :func:`run_inference` prefers that
+    checkpoint over the v2 source, so ``--stages train inference`` evaluates
+    the model that was just trained.
+
+    Best-checkpoint selection uses ``val/loss_total`` (the validation total
+    loss already logged by GLIM: λ·clip + (1−λ)·lm + ε·commitment).  Early
+    stopping monitors the same metric; patience <= 0 disables it.
+    """
+    import lightning as L
+    from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+
+    from .text import ZuCoH5DataModule
+
+    seed_everything(SEED)
+    torch.set_float32_matmul_precision("medium")
+
+    source_checkpoint = resolve_checkpoint(paths.source)
+    state = torch.load(source_checkpoint, map_location="cpu", weights_only=False)
+    hparams = state.get("hyper_parameters", {}) or {}
+    text_model_id = (hparams.get("text_model_id")
+                     or hparams.get("text_model") or "google/flan-t5-large")
+    use_null_prompt = bool(hparams.get("use_null_prompt", True))
+    prompt_dropout_probs = tuple(hparams.get("prompt_dropout_probs", (0.0, 1.0, 1.0)))
+    lr = float(hparams.get("lr", 1e-4))
+    bsz = int(batch_size or hparams.get("bsz_train", 8))
+    val_bsz = int(val_batch_size or hparams.get("bsz_val", 24))
+    accum = int(accumulate_grad_batches
+                or max(1, 576 // (bsz * max(1, int(devices)))))
+
+    output_root = require_v3_output(paths.output)
+    output_root.mkdir(parents=True, exist_ok=True)
+    checkpoint_dir = output_root / "checkpoints"
+    checkpoint = checkpoint_dir / "last.ckpt"
+    if overwrite and checkpoint_dir.is_dir():
+        for stale in checkpoint_dir.glob("*.ckpt"):
+            stale.unlink()
+        (output_root / "checkpoints_best" / "best.json").unlink(missing_ok=True)
+    if checkpoint.is_file() and not overwrite:
+        log.info("reusing trained checkpoint: %s", checkpoint)
+        return checkpoint
+
+    model = _build_model(
+        paths.variant, h5_n_channels(paths.h5_dir), text_model_id,
+        use_null_prompt, prompt_dropout_probs, hparams, paths.source,
+        bsz_train=bsz, bsz_val=val_bsz, lr=lr,
+        results_dir=output_root / "results")
+    dm = ZuCoH5DataModule(
+        str(paths.h5_dir), bsz_train=bsz, bsz_val=val_bsz,
+        bsz_test=val_bsz, num_workers=int(num_workers))
+
+    best_monitor = "val/loss_total"
+    best_checkpoint = ModelCheckpoint(
+        dirpath=str(checkpoint_dir), filename="best-{epoch:02d}",
+        monitor=best_monitor, mode="min", save_top_k=1, save_last=True,
+        every_n_epochs=1, verbose=True)
+    callbacks = [best_checkpoint]
+    early_stopping = None
+    if int(early_stop_patience) > 0:
+        early_stopping = EarlyStopping(
+            monitor=best_monitor, mode="min",
+            patience=int(early_stop_patience),
+            min_delta=float(early_stop_min_delta), verbose=True)
+        callbacks.append(early_stopping)
+    gpu = torch.cuda.is_available()
+    trainer = L.Trainer(
+        accelerator="gpu" if gpu else "cpu",
+        devices=int(devices) if gpu else 1,
+        strategy=("ddp_find_unused_parameters_true"
+                  if gpu and int(devices) > 1 else "auto"),
+        max_epochs=int(epochs),
+        precision="bf16-mixed" if gpu else "32-true",
+        accumulate_grad_batches=accum,
+        logger=False, enable_checkpointing=True, callbacks=callbacks,
+        use_distributed_sampler=False, num_sanity_val_steps=0,
+        limit_train_batches=limit_train_batches or 1.0,
+        limit_val_batches=limit_val_batches or 1.0,
+    )
+    log.info("training %s/%s epochs=%d bsz=%d accum=%d lr=%g "
+             "best=%s early_stop_patience=%d",
+             paths.dataset, paths.variant, epochs, bsz, accum, lr,
+             best_monitor, int(early_stop_patience))
+    trainer.fit(model, datamodule=dm)
+    if not checkpoint.is_file():
+        raise FileNotFoundError(
+            f"training finished but wrote no last checkpoint at {checkpoint}")
+    best_path_text = best_checkpoint.best_model_path or ""
+    best_path = Path(best_path_text) if best_path_text else None
+    if best_path is not None and not best_path.is_file():
+        best_path = None
+    best_meta = {
+        "monitor": best_monitor, "mode": "min",
+        "best_model_score": (
+            float(best_checkpoint.best_model_score)
+            if best_path is not None
+            and best_checkpoint.best_model_score is not None else None),
+        "best_model_path": str(best_path.resolve()) if best_path else None,
+        "last_model_path": str(checkpoint.resolve()),
+        "early_stop_patience": int(early_stop_patience),
+        "early_stop_min_delta": float(early_stop_min_delta),
+        "stopped_epoch": (int(early_stopping.stopped_epoch)
+                          if early_stopping is not None
+                          and early_stopping.stopped_epoch > 0
+                          else None),
+    }
+    Path(output_root / "checkpoints_best").mkdir(parents=True, exist_ok=True)
+    write_json(output_root / "checkpoints_best" / "best.json", best_meta)
+    write_json(output_root / "train_config.json", {
+        "experiment_id": output_root.name,
+        "dataset": paths.dataset, "task": "sentence_generation",
+        "model": "glim", "encoder": paths.variant,
+        "h5_dir": str(paths.h5_dir),
+        "source_checkpoint": str(source_checkpoint),
+        "checkpoint": str(checkpoint),
+        "best_checkpoint": best_meta["best_model_path"],
+        "best_monitor": best_monitor,
+        "early_stop_patience": int(early_stop_patience),
+        "early_stop_min_delta": float(early_stop_min_delta),
+        "text_model": text_model_id,
+        "use_null_prompt": use_null_prompt,
+        "epochs": int(epochs), "batch_size": bsz,
+        "val_batch_size": val_bsz,
+        "accumulate_grad_batches": accum,
+        "learning_rate": lr, "devices": int(devices),
+        "limit_train_batches": limit_train_batches,
+        "limit_val_batches": limit_val_batches,
+        "seed": SEED, "derived_inputs_used": False,
+    })
+    return best_path if best_path is not None and best_path.is_file() else checkpoint
+
+
 __all__ = ["RunPaths", "VARIANTS", "h5_n_channels", "resolve_checkpoint",
-           "resolve_paths", "run_inference"]
+           "resolve_active_checkpoint", "resolve_paths",
+           "run_inference", "run_training"]

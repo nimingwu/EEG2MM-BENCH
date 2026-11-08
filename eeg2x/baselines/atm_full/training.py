@@ -38,13 +38,13 @@ from eeg2x.data import (
     write_json,
 )
 from eeg2x.baselines.atm_full.diffusion_prior import DiffusionPriorUNet
-from eeg2x.frameworks.only_clip.low_level import DEFAULT_LOW_LEVEL_EPOCHS, LowLevelEEGEncoder
+from eeg2x.baselines.atm_full.low_level import DEFAULT_LOW_LEVEL_EPOCHS, LowLevelEEGEncoder
 from eeg2x.baselines.atm_full.model import ATMS
 from eeg2x.frameworks.only_clip.model import (
     generation_alignment_loss,
     retrieval_alignment_loss,
 )
-from eeg2x.frameworks.only_clip.semantic import DEFAULT_SEMANTIC_EPOCHS, PixelProjector
+from eeg2x.baselines.atm_full.semantic import DEFAULT_SEMANTIC_EPOCHS, PixelProjector
 
 
 log = logging.getLogger(__name__)

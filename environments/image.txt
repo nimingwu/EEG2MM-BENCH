@@ -1,12 +1,30 @@
-# Only-CLIP 图像框架（atm_s / reve / enigma_cnn）与 ENIGMA、AVDE
-# 已知可用的解释器：旧图像环境（torch 2.5.1+cu124）
-torch==2.5.1
+# Only-CLIP 图像框架的基础依赖（atm_s / reve / enigma_cnn）与 ENIGMA
+# 已知可用的解释器：/datas/linshishangchuan/11-3-image-env/eeg2x-atm
+# v2 的五个编码器共用这一个环境；LaBraM 与 LUNA 的扩展见另外两份文件。
+# 版本与 v2 的 requirements-atm.txt 一致。torch/torchvision 若要从
+# CUDA 12.4 源安装，先执行：
+#   pip install --index-url https://download.pytorch.org/whl/cu124 \
+#               torch==2.5.1 torchvision==0.20.1
+accelerate==1.5.2
 diffusers==0.30.3
-transformers==4.36.0
-timm==1.0.15
+einops==0.8.1
+h5py==3.13.0
+huggingface-hub==0.30.2
 mne==1.9.0
-h5py
-scikit-learn
-numpy<2
-Pillow
-einops
+numpy==1.26.4
+open-clip-torch==2.24.0
+pandas==2.2.3
+pillow==11.1.0
+pyyaml==6.0.2
+reformer-pytorch==1.4.4
+safetensors==0.5.3
+scikit-image==0.25.2
+scikit-learn==1.6.1
+scipy==1.15.3
+sentencepiece==0.2.0
+timm==1.0.15
+tokenizers==0.15.2
+torch==2.5.1
+torchvision==0.20.1
+tqdm==4.67.1
+transformers==4.36.0
