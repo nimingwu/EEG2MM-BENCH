@@ -147,3 +147,7 @@ python -m eeg2x retrieval --dataset things_eeg --model dummy --mode evaluate
 * 预处理产物与运行产物必须落在 benchmark 仓库内，这是可追溯性要求。
 * 评测报告带 `task_contract` 字段：从产物 HDF5 读出的采样率、通道表、时间窗与
   预处理步骤，以及该任务实际使用的指标与方向。框架的 `run_config.json` 记录同一份契约。
+* 文本的 `semkey_nway_2/4/10/24`、`semkey_frechet_distance` 与
+  `semkey_sbert_cosine` 统一使用
+  `sentence-transformers/paraphrase-multilingual-mpnet-base-v2`；报告里的
+  `semkey_sbert_model` 记录实际模型。

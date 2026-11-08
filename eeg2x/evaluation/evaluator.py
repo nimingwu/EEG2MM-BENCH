@@ -82,6 +82,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from eeg2x.metrics import evaluate, list_metrics, get_metric
+from eeg2x.metrics.semkey_metrics import SEMKEY_SBERT_MODEL
 from eeg2x.evaluation.registry import TASK_REGISTRY, get_task_config, list_tasks
 from eeg2x.h5_schema import validate_h5_file
 
@@ -647,6 +648,14 @@ def generate_report(task: str,
             "total_files": len(h5_files),
         },
     }
+
+    sbert_metrics = {
+        "semkey_nway_2", "semkey_nway_4", "semkey_nway_10", "semkey_nway_24",
+        "semkey_frechet_distance", "semkey_sbert_cosine",
+    }
+    if task == "sentence_generation" and any(
+            name in sbert_metrics for name in metric_names):
+        report["semkey_sbert_model"] = SEMKEY_SBERT_MODEL
 
     # No matches is a hard failure (principle 3/7: fail visible)
     if matched == 0 and ground_truths:

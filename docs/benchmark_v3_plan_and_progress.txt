@@ -135,6 +135,8 @@ Orig 实际可用的轨道是五条。EEGVid Orig 在三个数据集上各一条
 
 已经迁入 v3 的部分：metrics/semkey_metrics.py 与 tokenization.py 提供 15 项 SemKey 指标并已注册；evaluation 的文字分支读取 target_texts_json 并把 mtv_references 传给 MTV BLEU；sentence_generation 的默认指标改为 SemKey 套件；frameworks/glim/ 迁入 GLIM 核心（glim_v2）、文本基类与 datamodule、LaBraM 与 LUNA/REVE 适配器、third_party；pipeline.py 按 checkpoint 的 hyper_parameters 选择 LM 与 prompt 条件，生成句子并评测；datasets.py 增加 zuco2 与 chisco；CLI 增加 glim 框架、文本编码器与 glim_orig 基线。
 
+语义指标模型已经统一。semkey_nway_2/4/10/24、semkey_frechet_distance 与 semkey_sbert_cosine 共用 sentence-transformers/paraphrase-multilingual-mpnet-base-v2；这个多语言模型同时覆盖 ZuCo 英文和 Chisco/TMNRED 中文，旧的英文 all-mpnet-base-v2 不再用于任何文本数据集。评测报告在包含这些指标时写出 semkey_sbert_model，便于追溯。模型已下载到 /datas/hf-cache，离线加载验证通过。
+
 已经验证：在 ZuCo2 的 YAC 被试上，v3 生成的 44 句与原始 generate_sentence_predictions.py 在当前环境下的输出逐字相同（44/44）；GLIM 主模型的 checkpoint 在 v3 里加载为 missing=0、unexpected=0。评测层方面，用 v3 重算已有的 zuco2_glim 预测，BLEU 四项与 SBERT cosine 与原始 report_semkey.json 完全一致，Frechet 差 5e-9，四项 n-way 差在 1.5e-4 以内（随机试验与跨机器 RNG 漂移），5 项依赖 NLTK 的指标因为环境缺少 punkt_tab 与 stopwords 语料返回 nan。
 
 完整验证结果：ZuCo2 的 glim 变体跑完 1093 条，Chisco 的 glim 跑完 3000 条，ZuCo2 的 GLIM Orig 跑完 1093 条，样本数都与参考一致。指标与参考的差异在小数点后第二到第三位，来源有两个：当前环境重新生成的句子与存档预测不同（YAC 上与原始脚本逐字一致 44/44，但存档预测是另一台机器生成的，只有 17/44 相同），以及 n-way 的随机试验。评测层用存档预测重算时 BLEU 四项与 SBERT 完全一致，说明差异来自生成而非评测。

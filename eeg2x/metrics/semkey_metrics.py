@@ -27,6 +27,12 @@ paper's own runners often skip it because it is O(N^2).
 
 Implementation notes
 --------------------
+* N-way retrieval, Fréchet distance and SBERT cosine share one sentence
+  encoder, :data:`SEMKEY_SBERT_MODEL`:
+  ``sentence-transformers/paraphrase-multilingual-mpnet-base-v2``.  It covers
+  both the English ZuCo corpora and the Chinese Chisco/TMNRED corpora; the
+  previous English-only ``all-mpnet-base-v2`` was not a meaningful semantic
+  space for Chinese text.
 * Metric maths are ported from ``SemKey/evaluation/evaluate.py`` and kept
   faithful, including the use of ``torchmetrics``' ``bleu_score`` and the
   per-sample-then-averaged reduction.  Values are therefore comparable to the
@@ -60,6 +66,12 @@ _NLTK_CANDIDATES = (
     "/datas/eeg_benchmark_project/fuxian/fuxian-SEMKEY/SemKey/data/zuco_preprocessed_dataframe/nltk_data",
     "/root/nltk_data",
 )
+
+#: Shared sentence encoder for every SBERT-dependent SemKey metric.
+#: The multilingual model handles both Chinese (Chisco/TMNRED) and English
+#: (ZuCo) references; the former English-only default was not meaningful on
+#: Chinese datasets.
+SEMKEY_SBERT_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
 
 # Cached SBERT handles, keyed by (model_name, device) -- SemKey instantiates
 # the encoder once per metric family; sharing it keeps the cost the same while
@@ -192,7 +204,7 @@ class SemKeyNwayRetrieval(Metric):
     """N-way retrieval accuracy over SBERT embeddings (paper's Table 1)."""
 
     def __init__(self, n_ways: int = 2, num_trials: int = 10000,
-                 model_name: str = "all-mpnet-base-v2"):
+                 model_name: str = SEMKEY_SBERT_MODEL):
         self.n = int(n_ways)
         self.num_trials = int(num_trials)
         self.model_name = model_name
@@ -358,7 +370,7 @@ class SemKeyFrechetDistance(Metric):
     but small subsets will not.
     """
 
-    def __init__(self, model_name: str = "all-mpnet-base-v2"):
+    def __init__(self, model_name: str = SEMKEY_SBERT_MODEL):
         self.model_name = model_name
 
     @property
@@ -411,7 +423,7 @@ def _frechet(act1, act2) -> float:
 class SemKeySBERTCosine(Metric):
     """Mean cosine similarity between prediction and reference SBERT vectors."""
 
-    def __init__(self, model_name: str = "all-mpnet-base-v2"):
+    def __init__(self, model_name: str = SEMKEY_SBERT_MODEL):
         self.model_name = model_name
 
     @property

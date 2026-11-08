@@ -1,5 +1,7 @@
 # GLIM 文本框架与 GLIM Orig
 # 已知可用的解释器：/datas/linshishangchuan/glim_2（Python 3.9）
+# SemKey 的六项句向量指标统一使用 HF 缓存中的
+# sentence-transformers/paraphrase-multilingual-mpnet-base-v2。
 torch==2.7.1
 lightning==2.4.0
 transformers==4.40.2
