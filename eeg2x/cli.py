@@ -464,26 +464,45 @@ def _preprocess(args: argparse.Namespace) -> int:
 
 
 def _retrieval(args: argparse.Namespace) -> int:
-    from .retrieval import DATASETS, MODELS, evaluate_run, infer, iter_runs, resolve_run
+    from .retrieval import (
+        ALL_MODELS, DATASETS, DUMMY_MODEL, evaluate_dummy,
+        evaluate_run, infer, iter_runs, list_dummy_results, resolve_run,
+    )
 
     if args.list:
         rows = list(iter_runs(args.dataset))
         print(f"datasets ({len(DATASETS)}): {', '.join(sorted(DATASETS))}")
-        print(f"models ({len(MODELS)}): {', '.join(MODELS)}")
+        print(f"models ({len(ALL_MODELS)}): {', '.join(ALL_MODELS)}")
         print(f"completed runs: {len(rows)}")
         for spec in rows[:20]:
             print(f"  {spec.dataset:18s} {spec.model:20s} seed-{spec.seed}")
+        dummy_rows = list_dummy_results()
+        if args.dataset:
+            dummy_rows = [row for row in dummy_rows if row[0] == args.dataset]
+        print(f"dummy results: {len(dummy_rows)}")
+        for dataset, path in dummy_rows[:20]:
+            print(f"  {dataset:18s} {DUMMY_MODEL:20s} {path}")
         return 0
     if not args.dataset or not args.model:
         raise SystemExit("error: --dataset and --model are required (or use --list)")
-    run = Path(args.run_dir) if args.run_dir else resolve_run(
-        args.dataset, args.model, args.seed).directory
-    if args.mode == "infer":
+    if args.model == DUMMY_MODEL:
+        if args.mode == "infer":
+            raise SystemExit(
+                "error: Dummy is fitted from targets, not an EEG model; "
+                "use --mode evaluate")
         try:
-            run = infer(args.dataset, args.model, args.seed, device=args.device)
-        except (RuntimeError, FileNotFoundError) as exc:
+            result = evaluate_dummy(args.dataset, path=args.run_dir)
+        except (KeyError, FileNotFoundError, ValueError) as exc:
             raise SystemExit(f"error: {exc}") from exc
-    result = evaluate_run(run)
+    else:
+        run = Path(args.run_dir) if args.run_dir else resolve_run(
+            args.dataset, args.model, args.seed).directory
+        if args.mode == "infer":
+            try:
+                run = infer(args.dataset, args.model, args.seed, device=args.device)
+            except (RuntimeError, FileNotFoundError) as exc:
+                raise SystemExit(f"error: {exc}") from exc
+        result = evaluate_run(run)
     from .data import write_json
     from .paths import V3_ROOT, require_v3_output
     output = require_v3_output(
@@ -538,13 +557,14 @@ def _list(_args: argparse.Namespace) -> int:
     print("encoders:")
     for name in _encoder_registry().list_encoders():
         spec = _encoder_registry().ENCODERS[name]
-        if spec.optimizer is None:
-            opt = "framework default"
-        elif spec.optimizer_datasets is None:
-            opt = "own optimizer (all datasets)"
+        if spec.learning_rate is None:
+            lr = "framework default lr"
+        elif spec.learning_rate_datasets is None:
+            lr = f"lr={spec.learning_rate:g} (all datasets)"
         else:
-            opt = f"own optimizer ({', '.join(spec.optimizer_datasets)} only)"
-        print(f"  {name:12s} feature_dim={str(spec.feature_dim):5s}  {opt}")
+            lr = (f"lr={spec.learning_rate:g} "
+                  f"({', '.join(spec.learning_rate_datasets)} only)")
+        print(f"  {name:12s} feature_dim={str(spec.feature_dim):5s}  {lr}")
     print("video encoders:")
     print(f"  {', '.join(VIDEO_ENCODERS)}")
     print("datasets:")

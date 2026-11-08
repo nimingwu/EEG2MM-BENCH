@@ -16,7 +16,7 @@ v3 的目标是把 v2 在推进中长出来的重复结构推倒重写，同时�
 
 第五，刺激侧提升为一等概念，图像如何变成回归目标放在 eeg2x/targets/ 下，不再藏在模型目录里。
 
-另有几条硬约束，任何时候都不能违反。全局种子固定为 2000，运行时必须设置 PYTHONHASHSEED=2000。所有预处理与运行产物必须落在 benchmark 仓库内，这是可追溯性要求。完整 ATM、AVDE、ENIGMA 是基线，不能换编码器。LUNA 使用与其余编码器不同的优化器配方，这是有意的偏离，代价与依据记录在 v2 的 LUNA_TRAINING_DEVIATION.md，v3 用 EncoderSpec.optimizer 把它数据化，但结论不变，LUNA 的行不能与其他编码器并列排名。另外，v3 仓库里不允许留任何临时性的模型健康监控代码，这类东西只属于诊断过程，不属于 benchmark。tab_benchmark_setup.tex 与 tab_benchmark_setup_en.tex 两个表格文件暂时冻结，不要改动。
+另有几条硬约束，任何时候都不能违反。全局种子固定为 2000，运行时必须设置 PYTHONHASHSEED=2000。所有预处理与运行产物必须落在 benchmark 仓库内，这是可追溯性要求。完整 ATM、AVDE、ENIGMA 是基线，不能换编码器。LUNA 在 ThingsEEG 上只把学习率改为 1e-4，其余训练设置与其他编码器完全一致；其他数据集仍用框架默认 3e-4。这是有意的偏离，LUNA 的 ThingsEEG 行不能与其他编码器的 3e-4 行直接并列排名；依据见 docs/LUNA_TRAINING_DEVIATION.md。另外，v3 仓库里不允许留任何临时性的模型健康监控代码，这类东西只属于诊断过程，不属于 benchmark。tab_benchmark_setup.tex 与 tab_benchmark_setup_en.tex 两个表格文件暂时冻结，不要改动。
 
 二、长期路线
 
@@ -30,7 +30,7 @@ v3 的目标是把 v2 在推进中长出来的重复结构推倒重写，同时�
 
 三、已经完成并且验证过的部分
 
-编码器层已经完成。五个编码器统一到 eeg2x/encoders/base.py 定义的协议下，模型数学逐字复制自 v2。LUNA 的论文优化器配方写成 LUNA_OPTIMIZER，由编码器自己声明，训练器读取声明，没有声明的走框架默认配方，只有一条训练代码路径。
+编码器层已经完成。五个编码器统一到 eeg2x/encoders/base.py 定义的协议下，模型数学逐字复制自 v2。所有编码器共用框架统一训练配方；唯一例外是 LUNA 在 ThingsEEG 上通过 EncoderSpec.learning_rate 把学习率设为 1e-4，训练器只替换 lr，优化器类别、weight decay、warmup、调度、epoch/batch/seed 全部与其他编码器一致，仍然只有一条训练代码路径。
 
 框架层已经完成，并做过一次职责拆分。eeg2x/frameworks/only_clip 现在只保留 Only-CLIP 需要的 clip 阶段：checkpoint.py 负责把 v2 的键名迁移进新结构，pipeline.py 用阶段表串起链路，换编码器只改一个参数。完整 ATM 专用的 low_level.py、semantic.py、sdxl_low_level.py、modeling_git.py 已经移到 eeg2x/baselines/atm_full；only_clip/inference.py 删除了 _StageNotWired、low_level/semantic 分支及其 helper，only_clip/train.py 删除了未使用的 retrieval 分支，pipeline.py 去掉了 preprocess stage。only_clip 从 5248 行降到 2128 行。atm_full/pipeline.py 改用 atm_full.inference 自带的完整 generate_stage，不再依赖 only_clip 的 stub。已验证两个包的模块导入、py_compile，以及 clip 生成路径在 200 行真实 H5 上的 smoke test（假生成器）；完整图像推理没有重跑。
 
@@ -156,6 +156,8 @@ v3.1 是 v3 的代码与文档副本，不含 artifacts、h5、dist、.venv，�
 多环境设计已经落地。environments/ 下有 image、image-braindecode、image-luna、video、text、retrieval 六份按用途分开的说明；eeg2x/environments.py 登记每个框架与基线需要的包，只做 find_spec 与 importlib.metadata 检查，不导入重包；benchmark.py env 打印当前解释器、包版本、各环境缺失项与可跑的模型；run 的每条分派在导入具体框架之前做前置检查，缺包时直接报错并指出该换哪份说明。已在空解释器（Python 3.12，只有基础包）、glim_2 与 eeg2video 三个解释器上验证：空解释器能正确列出全部缺失，glim_2 识别 text 可用，eeg2video 识别 video 可用。
 
 检索整合的评测层已经完成。eeg2x/retrieval/ 登记 15 个数据集键（Grootswagers2019 拆成 5 Hz 与 20 Hz）、11 个模型与轨道布局；evaluate.py 从 predictions.npz 与 test_samples.jsonl 重算 subject-agg 的 top1/top5/top10 与中位排名，采用全局候选集、L2 归一化与余弦相似度；benchmark.py retrieval 支持 --list 与 --mode evaluate。330 条轨道全部可枚举。对照结果：THINGS-EEG 与 Grootswagers2019 5Hz 的 labram seed-33 与参考逐位一致（差约 2.5e-8），ZuCo1 最大差 1.4e-3，ds005662 最大差 1.7e-4；参考实现的分组与并列处理未公开，比较留 2e-3 容差。
+
+Dummy 基线已经接入。eeg2x/retrieval/dummy.py 读取 /EEG_bench_open/Dummy/runs 的 canonical 结果，覆盖 15 个数据集键（Chisco 对应 chisco_author_imagined_text），可用 EEG2X_DUMMY_ROOT 指向别的交付副本。用法是 benchmark.py retrieval --dataset things_eeg --model dummy --mode evaluate；--mode infer 会明确拒绝，因为 Dummy 的预测是训练集与验证集目标向量的均值，复制给全部测试样本，没有可重跑的 EEG 模型。它使用单 seed 的固定 fit pool，--seed 只影响输出文件名，结果写到 artifacts/retrieval/<dataset>/dummy/seed-<seed>.json。--list 会单独列出 15 个可用的 Dummy 结果。
 
 检索的推理适配器已经写好但当前跑不了。adapter.py 通过 EEG2X_EEGBENCH_PYTHON 指定的解释器调用 EEGBench 自己的 eegbench.launch ... evaluate，从 weights.pt 重新加载并前向，属于推理而非训练；它会先探测 neuralbench、neuraltrain、neuralset、neuralfetch 是否可导入。当前 /EEG_bench_open 的 vendor 只剩 neuralbench，另外三个包的源码已被清理，本机也没有可用的 Python 3.12 环境，所以 --mode infer 会给出明确错误并指向 environments/retrieval.txt。
 

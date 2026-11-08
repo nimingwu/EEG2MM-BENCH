@@ -128,6 +128,8 @@ python -m eeg2x run --dataset thingseeg --model only_clip --encoder luna \
 # 检索：枚举轨道或从已有预测重算 subject-agg 指标。
 python -m eeg2x retrieval --list
 python -m eeg2x retrieval --dataset things_eeg --model labram --seed 33 --mode evaluate
+# Dummy：读取 EEGBench 的 canonical 结果，不训练也不做 EEG 推理。
+python -m eeg2x retrieval --dataset things_eeg --model dummy --mode evaluate
 ```
 
 正式运行要求环境变量 `PYTHONHASHSEED=2000`，全局种子固定为 2000。
@@ -137,8 +139,9 @@ python -m eeg2x retrieval --dataset things_eeg --model labram --seed 33 --mode e
 * 三条生成任务共用同一套编码器实现；检索任务复用 EEGBench 的模型与数据，
   不复制它的模型层。
 * 训练与推理产物只写本仓库内的 `artifacts/` 与 `h5/`，保证可追溯。
-* LUNA 的逐层衰减优化器只在 ThingsEEG 上生效，其他数据集回落到统一配方；
-  这是有意的偏离，原因与代价见 `docs/LUNA_TRAINING_DEVIATION.md`。
+* LUNA 在 ThingsEEG 上只把学习率改为 `1e-4`，其他训练设置与其他编码器完全一致；
+  其他数据集 LUNA 仍用框架默认的 `3e-4`。因此 LUNA 的 ThingsEEG 行不能与其他
+  编码器的 `3e-4` 行直接并列比较，见 `docs/LUNA_TRAINING_DEVIATION.md`。
 * **braindecode 必须是 1.3.2**：1.6 及以上版本的 LaBraM 架构不同，无法加载
   已有的 checkpoint。
 * 预处理产物与运行产物必须落在 benchmark 仓库内，这是可追溯性要求。

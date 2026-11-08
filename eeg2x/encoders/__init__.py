@@ -19,7 +19,7 @@ from typing import Dict, Mapping
 
 from torch import nn
 
-from .base import BaseEEGEncoder, EEGEncoder, EncoderSpec, OptimizerSpec, build as _build
+from .base import BaseEEGEncoder, EEGEncoder, EncoderSpec, build as _build
 
 # 注意：luna 不在此处 import 实现（它会加载 rotary_embedding_torch）。只取 SPEC。
 from . import atm_s, enigma, labram, luna, reve
@@ -69,7 +69,6 @@ __all__ = [
     "BaseEEGEncoder",
     "EEGEncoder",
     "EncoderSpec",
-    "OptimizerSpec",
     "build",
     "list_encoders",
     "resolve",

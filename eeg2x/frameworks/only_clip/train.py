@@ -6,11 +6,12 @@ v2 把这两段训练写在 ``model/atm/training.py`` 的 ``train_atm`` 与
 
 训练器只认 :class:`~eeg2x.encoders.base.EncoderSpec`：
 
-* ``spec.optimizer is None`` 的编码器用框架统一配方（AdamW，平坦 lr=3e-4，
-  无 warmup、无调度），与 v2 一致；
-* 声明了 ``OptimizerSpec`` 的编码器（目前只有 LUNA）走它自己的配方，
-  ``layer_decay`` 非空时启用 BEiT 式逐层学习率衰减。训练循环仍然只有一条代码
-  路径，差异是数据而不是 ``if encoder == "luna"``。
+* 所有编码器共用框架统一配方：AdamW、平坦学习率、无 warmup、无调度、相同
+  epoch/batch/seed；
+* 唯一的数据集级例外是 LUNA 在 ThingsEEG 上把学习率设为 1e-4（其余数据集
+  仍为框架默认 3e-4），通过 ``EncoderSpec.learning_rate`` 与
+  ``learning_rate_datasets`` 声明。训练循环仍然只有一条代码路径，差异是数据
+  而不是 ``if encoder == "luna"``。
 
 **写侧守卫**：所有训练产物都先过 :func:`eeg2x.paths.require_v3_output`，因此
 产物不可能落到 ``EEG2X-Benchmark-v3`` 之外。读 v2 的 HDF5 与特征库仍走
@@ -25,10 +26,8 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import os
 import random
-from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Sequence
 
@@ -65,11 +64,6 @@ DEFAULT_BATCH_SIZE = 64
 DEFAULT_PROJECTION_EPOCHS = 150
 DEFAULT_PROJECTION_BATCH_SIZE = 1024
 DEFAULT_PROJECTION_LR = 1e-3
-
-#: LUNA 主干里属于「输入侧」的参数名（BEiT 层号 0）。逐层衰减只对声明了
-#: ``OptimizerSpec.layer_decay`` 的编码器生效；这套名字来自 v2 的实测层表。
-_INPUT_SIDE = {"patch_embed", "freq_embed", "channel_location_embedder",
-               "cross_attn", "mask_token"}
 
 
 def seed_everything(seed: int) -> None:
@@ -170,96 +164,15 @@ def evaluate_model(model: OnlyClipModel, dataset: ATMH5Dataset, *,
             "top1": float(top1.item()), "top5": float(top5.item())}
 
 
-def _backbone_blocks(model: nn.Module) -> int:
-    """主干 block 数，从参数名实际数出来，而不是假设固定深度。"""
-    highest = -1
-    for name, _ in model.named_parameters():
-        parts = name.split(".")
-        if "blocks" in parts:
-            index = parts.index("blocks")
-            if index + 1 < len(parts) and parts[index + 1].isdigit():
-                highest = max(highest, int(parts[index + 1]))
-    if highest < 0:
-        raise RuntimeError(
-            "layer-wise LR decay needs numbered backbone blocks, but no "
-            "'blocks.<N>' parameter names were found")
-    return highest + 1
+def build_optimizer(model: nn.Module, *,
+                    learning_rate: float = FRAMEWORK_LEARNING_RATE):
+    """Framework recipe: AdamW at a flat learning rate, no schedule.
 
-
-def _layer_id(name: str, *, backbone_blocks: int) -> int:
-    """参数在逐层学习率衰减里的层号（BEiT 约定：越大学习率越高）。"""
-    parts = name.split(".")
-    if "blocks" in parts:
-        index = parts.index("blocks")
-        if index + 1 < len(parts) and parts[index + 1].isdigit():
-            return int(parts[index + 1]) + 1
-    if "backbone" in parts:
-        index = parts.index("backbone")
-        if index + 1 < len(parts) and parts[index + 1] in _INPUT_SIDE:
-            return 0
-    return backbone_blocks + 1
-
-
-def build_optimizer(model: nn.Module, spec,
-                    *, steps_per_epoch: int, epochs: int):
-    """按 ``EncoderSpec.optimizer`` 构造优化器与调度器。
-
-    ``spec is None`` 时用框架统一配方。否则按声明执行：weight decay 对
-    ``ndim <= 1`` 的参数（bias、LayerNorm 权重）关闭；每层学习率为
-    ``peak * layer_decay ** (layer_max - layer_id)``，再由 warmup/cosine 的
-    ``LambdaLR`` 统一缩放。
+    Encoders may override only the learning rate for selected datasets (LUNA on
+    ThingsEEG); the optimizer class, weight decay and lack of warmup/scheduler
+    stay identical to every other encoder.
     """
-    if spec is None:
-        return torch.optim.AdamW(model.parameters(), lr=FRAMEWORK_LEARNING_RATE), None
-
-    peak = float(spec.peak_lr)
-    floor = float(spec.min_lr if spec.min_lr is not None else 0.0)
-    weight_decay = float(spec.weight_decay)
-    layer_decay = float(spec.layer_decay if spec.layer_decay is not None else 1.0)
-    if not 0.0 <= floor < peak:
-        raise ValueError(f"min_lr must be in [0, {peak}), got {floor}")
-
-    backbone_blocks = _backbone_blocks(model)
-    layer_max = backbone_blocks + 1
-    buckets: Dict[tuple, Dict[str, object]] = {}
-    for name, parameter in model.named_parameters():
-        if not parameter.requires_grad:
-            continue
-        layer_id = _layer_id(name, backbone_blocks=backbone_blocks)
-        if not 0 <= layer_id <= layer_max:
-            raise RuntimeError(f"layer id {layer_id} out of range for {name!r}")
-        decayed = parameter.ndim > 1
-        bucket = buckets.setdefault((layer_id, decayed), {
-            "lr": peak * layer_decay ** (layer_max - layer_id),
-            "weight_decay": weight_decay if decayed else 0.0,
-            "params": [],
-        })
-        bucket["params"].append(parameter)          # type: ignore[union-attr]
-    if not buckets:
-        raise RuntimeError("optimizer received no trainable parameter")
-    if len({layer for layer, _ in buckets}) < 2 and any(
-            "blocks." in name for name, parameter in model.named_parameters()
-            if parameter.requires_grad):
-        raise RuntimeError(
-            "layer-wise LR decay collapsed to a single layer even though the "
-            "backbone is trainable; the layer map is not matching parameter names")
-    groups = [buckets[key] for key in sorted(buckets)]
-    optimizer = torch.optim.AdamW(groups, lr=peak)
-
-    warmup_steps = int(spec.warmup_epochs) * int(steps_per_epoch)
-    total_steps = int(epochs) * int(steps_per_epoch)
-    if total_steps <= 0:
-        raise ValueError("the schedule needs at least one training step")
-    floor_ratio = floor / peak
-
-    def schedule(step: int) -> float:
-        if step < warmup_steps:
-            return (step + 1) / max(1, warmup_steps)
-        progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
-        cosine = 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
-        return floor_ratio + (1.0 - floor_ratio) * cosine
-
-    return optimizer, torch.optim.lr_scheduler.LambdaLR(optimizer, schedule)
+    return torch.optim.AdamW(model.parameters(), lr=float(learning_rate)), None
 
 
 def _atomic_torch_save(value: object, path: str | Path) -> Path:
@@ -325,34 +238,29 @@ def train_encoder(paths: "RunPaths", *, epochs: int = DEFAULT_EPOCHS,
         if len(loader) == 0:
             raise ValueError(
                 f"batch_size={batch_size} exceeds the {len(train_data)} training rows")
-        # 例外按 (编码器 x 数据集) 判定：LUNA 的配方只在 ThingsEEG 上生效，
-        # 其余数据集回落到框架统一配方（见 EncoderSpec.optimizer_datasets）。
-        optimizer_spec = spec.optimizer_for(paths.dataset)
-        optimizer, scheduler = build_optimizer(
-            model, optimizer_spec, steps_per_epoch=len(loader), epochs=epochs)
-        effective_lr = (float(optimizer_spec.peak_lr) if optimizer_spec is not None
+        # 唯一的数据集级差异是 LUNA 在 ThingsEEG 上的学习率覆盖；其余编码器
+        # 与其余设置全部共用框架统一配方（见 EncoderSpec.learning_rate_datasets）。
+        override_lr = spec.learning_rate_for(paths.dataset)
+        effective_lr = (float(override_lr) if override_lr is not None
                         else FRAMEWORK_LEARNING_RATE)
-        if optimizer_spec is not None:
-            log.info("%s on %s uses its own fine-tuning recipe (peak_lr=%g, "
-                     "warmup=%s epochs, wd=%g, layer_decay=%s); the framework "
-                     "default lr=%g does not apply. See "
-                     "docs/LUNA_TRAINING_DEVIATION.md.",
-                     spec.name, paths.dataset, optimizer_spec.peak_lr,
-                     optimizer_spec.warmup_epochs, optimizer_spec.weight_decay,
-                     optimizer_spec.layer_decay, FRAMEWORK_LEARNING_RATE)
-        elif spec.optimizer is not None:
-            log.info("%s declares its own optimizer but not for dataset %r; "
-                     "using the framework default lr=%g.",
-                     spec.name, paths.dataset, FRAMEWORK_LEARNING_RATE)
+        optimizer, scheduler = build_optimizer(model, learning_rate=effective_lr)
+        if override_lr is not None:
+            log.info("%s on %s uses the framework recipe with learning_rate=%g "
+                     "(override; framework default %g); all other settings are "
+                     "shared. See docs/LUNA_TRAINING_DEVIATION.md.",
+                     spec.name, paths.dataset, effective_lr,
+                     FRAMEWORK_LEARNING_RATE)
+        else:
+            log.info("%s on %s uses the framework recipe lr=%g.",
+                     spec.name, paths.dataset, effective_lr)
         config: Dict[str, object] = {
             "subject_id": paths.subject, "mode": "generation",
             "profile_id": paths.profile_id, "epochs": epochs,
             "batch_size": batch_size, "learning_rate": effective_lr,
             "seed": seed, "encoder": spec.name,
-            "optimizer_recipe": ("encoder_spec" if optimizer_spec is not None
-                                 else "framework_default"),
-            "optimizer_override": (asdict(optimizer_spec)
-                                   if optimizer_spec is not None else None),
+            "optimizer_recipe": "framework_default",
+            "learning_rate_source": ("encoder_spec" if override_lr is not None
+                                     else "framework_default"),
         }
         sources = train_data.fingerprints + test_data.fingerprints
         history: List[Dict[str, float | int]] = []

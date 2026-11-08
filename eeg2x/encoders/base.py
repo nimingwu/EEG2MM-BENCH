@@ -7,11 +7,12 @@
 
 设计要点
 --------
-``EncoderSpec.optimizer``
-    编码器**自己声明**微调优化器。``None`` 表示用框架统一配方（AdamW 平坦
-    lr、无 warmup/调度）。目前只有 LUNA 声明了它（论文 Table 6），见
-    ``docs/LUNA_TRAINING_DEVIATION.md``。训练循环只有一条代码路径，差异是
-    **数据**而不是埋在循环里的 ``if encoder == "luna"``。
+``EncoderSpec.learning_rate``
+    所有编码器共用框架统一配方（AdamW 平坦学习率，无 warmup、无调度）。
+    唯一的数据集级差异是 LUNA 在 ThingsEEG 上把学习率设为 1e-4，其余设置
+    完全相同；``learning_rate_datasets`` 限定该覆盖只在该数据集生效。训练
+    循环只有一条代码路径，差异是**数据**而不是埋在循环里的
+    ``if encoder == "luna"``。见 ``docs/LUNA_TRAINING_DEVIATION.md``。
 
 ``forward`` / ``forward_tokens``
     前者返回池化后的 ``[B, D]``，后者返回时序表征 ``[B, T', D]``。image 任务
@@ -28,35 +29,6 @@ from typing import Callable, Protocol, runtime_checkable
 
 import torch
 from torch import Tensor, nn
-
-
-@dataclass(frozen=True)
-class OptimizerSpec:
-    """一个编码器声明的微调优化器配方。
-
-    未声明的编码器走框架统一配方；声明了就完全按这里来。``layer_decay`` 非空时
-    启用 BEiT 式逐层学习率衰减（层号规则由训练器按参数名推导）。
-    """
-
-    peak_lr: float
-    min_lr: float | None = None
-    warmup_epochs: int = 0
-    weight_decay: float = 0.0
-    layer_decay: float | None = None
-
-    def __post_init__(self) -> None:
-        if self.peak_lr <= 0:
-            raise ValueError(f"peak_lr must be positive, got {self.peak_lr}")
-        if self.min_lr is not None and not 0.0 <= self.min_lr < self.peak_lr:
-            raise ValueError(
-                f"min_lr must be in [0, {self.peak_lr}), got {self.min_lr}")
-        if self.warmup_epochs < 0:
-            raise ValueError(f"warmup_epochs must be non-negative, got {self.warmup_epochs}")
-        if self.weight_decay < 0:
-            raise ValueError(f"weight_decay must be non-negative, got {self.weight_decay}")
-        if self.layer_decay is not None and not 0.0 < self.layer_decay <= 1.0:
-            raise ValueError(
-                f"layer_decay must be in (0, 1], got {self.layer_decay}")
 
 
 @runtime_checkable
@@ -115,11 +87,11 @@ class EncoderSpec:
     name: str
     builder: Callable[..., nn.Module]
     feature_dim: int | None          # None 表示随 n_samples 变化，由 builder 决定
-    optimizer: OptimizerSpec | None = None
-    #: ``optimizer`` 适用的数据集；``None`` = 所有数据集。LUNA 的例外**只在
-    #: ThingsEEG 上成立**：Grootswager2019 用同一配方更差，已回退（见
-    #: ``实验报告12.txt`` 第九节与 ``docs/LUNA_TRAINING_DEVIATION.md``）。
-    optimizer_datasets: tuple[str, ...] | None = None
+    #: 框架统一配方下的学习率覆盖；``None`` 表示用框架默认 3e-4。
+    learning_rate: float | None = None
+    #: ``learning_rate`` 适用的数据集；``None`` = 所有数据集。LUNA 的覆盖只在
+    #: ThingsEEG 上成立（其他数据集仍用 3e-4）。
+    learning_rate_datasets: tuple[str, ...] | None = None
     required_packages: tuple[str, ...] = ()
     needs_channel_names: bool = False
     #: 非空表示该编码器的**输入契约与另一个编码器完全相同**，直接复用后者的
@@ -127,13 +99,13 @@ class EncoderSpec:
     h5_encoder: str | None = None
     description: str = ""
 
-    def optimizer_for(self, dataset: str) -> OptimizerSpec | None:
-        """该数据集上实际生效的优化器配方；``None`` 表示框架默认。"""
-        if self.optimizer is None:
+    def learning_rate_for(self, dataset: str) -> float | None:
+        """该数据集上实际生效的学习率覆盖；``None`` 表示框架默认。"""
+        if self.learning_rate is None:
             return None
-        if self.optimizer_datasets is None:
-            return self.optimizer
-        return self.optimizer if dataset in self.optimizer_datasets else None
+        if self.learning_rate_datasets is None:
+            return self.learning_rate
+        return self.learning_rate if dataset in self.learning_rate_datasets else None
 
     def require_packages(self) -> None:
         """缺依赖时**明确报错**，而不是在构造到一半时抛 ImportError。
@@ -175,6 +147,5 @@ __all__ = [
     "BaseEEGEncoder",
     "EEGEncoder",
     "EncoderSpec",
-    "OptimizerSpec",
     "build",
 ]

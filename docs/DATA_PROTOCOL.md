@@ -145,11 +145,11 @@ Low-Level 前校验它与 LUNA 生成 profile 的正式测试 `stimulus_id` 行�
 LUNA 高层 profile、Low-Level profile 和图像特征都不能复用 EEG_Image_decode 的
 预处理/CLIP 文件；图像特征必须由 benchmark 根据 HDF5 manifest 从原图重新提取。
 
-**训练侧的例外（不在本协议范围内，仅作交叉引用）**：统一框架的其余编码器共用一套
-平坦 `lr=3e-4` 的配方，LUNA 改用其论文 Table 6 的微调优化器（`lr 1e-4` + warmup +
-cosine + layer-wise decay `0.5`）。本协议第 3 行明确不规定训练超参，因此这**不是协议
-例外，而是框架一致性的缺口**；原因、证据与代价见
-[LUNA_TRAINING_DEVIATION.md](LUNA_TRAINING_DEVIATION.md)。
+**训练侧的例外（不在本协议范围内，仅作交叉引用）**：统一框架的所有编码器共用一套
+AdamW、平坦学习率、无 warmup、无调度的配方。唯一的数据集级差异是 LUNA 在 ThingsEEG
+上把学习率设为 `1e-4`（框架默认 `3e-4`），其他设置与其他编码器完全相同；其他数据集
+LUNA 仍用 `3e-4`。本协议第 3 行明确不规定训练超参，因此这**不是协议例外，而是
+框架一致性的缺口**；见 [LUNA_TRAINING_DEVIATION.md](LUNA_TRAINING_DEVIATION.md)。
 
 ## 数据集划分：统一契约，不统一规则
 
